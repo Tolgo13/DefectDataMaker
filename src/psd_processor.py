@@ -4,6 +4,7 @@ PSDファイルの読み込み、二値化チェック、PNG変換を行う
 """
 
 import os
+import sys
 from pathlib import Path
 from typing import Tuple, List, Optional
 from dataclasses import dataclass
@@ -12,6 +13,27 @@ from enum import Enum
 import numpy as np
 from PIL import Image
 from psd_tools import PSDImage
+
+# ロガーをインポート（オプション）
+_log_error_available = False
+_log_debug_available = False
+
+try:
+    from ..utils.logger import log_error, log_debug
+    _log_error_available = True
+    _log_debug_available = True
+except ImportError:
+    try:
+        # フォールバック: シンプルなロガーを試す
+        from ..utils.logger_simple import log_error, log_debug
+        _log_error_available = True
+        _log_debug_available = True
+    except ImportError:
+        # ロガーが利用できない場合は何もしない
+        def log_error(message: str, exception: Optional[Exception] = None) -> None:
+            pass
+        def log_debug(message: str) -> None:
+            pass
 
 
 class BinarizationStatus(Enum):
@@ -53,11 +75,32 @@ class PSDProcessor:
             PIL Image オブジェクト、エラー時はNone
         """
         try:
-            psd = PSDImage.open(file_path)
+            log_debug(f"load_psd開始: {file_path}")
+            # Pathオブジェクトに変換してから文字列に戻すことで、エンコーディング問題を回避
+            path = Path(file_path)
+            log_debug(f"Path作成成功: {path}")
+            
+            log_debug(f"PSDImage.open開始: {str(path)}")
+            psd = PSDImage.open(str(path))
+            log_debug("PSDImage.open成功")
+            
+            log_debug("psd.composite()開始")
             image = psd.composite()
+            log_debug("psd.composite()成功")
+            
             return image
+        except ImportError as e:
+            # モジュールのインポートエラー（PyInstallerでバンドル漏れの可能性）
+            error_msg = f"モジュールのインポートエラー: {e}\npsd_toolsが正しくインストールされていないか、PyInstallerでバンドルされていない可能性があります。"
+            log_error(f"Error loading PSD (ImportError): {file_path}", e)
+            log_debug(f"ImportError発生: {e}")
+            print(error_msg)
+            return None
         except Exception as e:
-            print(f"Error loading PSD: {file_path}, {e}")
+            error_msg = f"PSDファイルの読み込みエラー: {file_path}, {e}"
+            log_error(f"Error loading PSD: {file_path}", e)
+            log_debug(f"Exception発生: {type(e).__name__}: {e}")
+            print(error_msg)
             return None
     
     def is_binarized(self, image: Image.Image) -> Tuple[bool, float]:
@@ -133,28 +176,40 @@ class PSDProcessor:
             ProcessingResult
         """
         try:
+            log_debug(f"process_file開始: input_path={input_path}, output_dir={output_dir}")
             # PSD読み込み
             image = self.load_psd(input_path)
             if image is None:
+                log_debug("load_psdがNoneを返しました")
                 return ProcessingResult(
                     file_path=input_path,
                     status=BinarizationStatus.ERROR,
                     message="PSDファイルの読み込みに失敗しました"
                 )
             
+            log_debug("PSD読み込み成功、二値化チェック開始")
             # 二値化チェック
             is_binary, non_binary_ratio = self.is_binarized(image)
+            log_debug(f"二値化チェック完了: is_binary={is_binary}, non_binary_ratio={non_binary_ratio}")
             
-            # 出力パスを生成
-            input_name = Path(input_path).stem
-            output_path = os.path.join(output_dir, f"{input_name}.png")
+            # 出力パスを生成（Pathオブジェクトを使用）
+            input_path_obj = Path(input_path)
+            output_dir_obj = Path(output_dir)
+            output_path_obj = output_dir_obj / f"{input_path_obj.stem}.png"
+            output_path = str(output_path_obj)
+            log_debug(f"出力パス: {output_path}")
             
             # 二値化して保存
+            log_debug("二値化処理開始")
             binary_image = self.convert_to_binary(image, invert=invert)
+            log_debug("二値化処理完了")
             
             # 出力ディレクトリがなければ作成
-            os.makedirs(output_dir, exist_ok=True)
+            log_debug(f"出力ディレクトリ作成: {output_dir_obj}")
+            output_dir_obj.mkdir(parents=True, exist_ok=True)
+            log_debug(f"PNG保存開始: {output_path}")
             binary_image.save(output_path, 'PNG')
+            log_debug("PNG保存成功")
             
             if is_binary:
                 return ProcessingResult(
@@ -172,10 +227,13 @@ class PSDProcessor:
                 )
                 
         except Exception as e:
+            error_msg = f"処理エラー: {str(e)}"
+            log_error(f"Error processing file: {input_path}, output_dir={output_dir}", e)
+            log_debug(f"process_fileで例外発生: {type(e).__name__}: {e}")
             return ProcessingResult(
                 file_path=input_path,
                 status=BinarizationStatus.ERROR,
-                message=f"処理エラー: {str(e)}"
+                message=error_msg
             )
     
     def find_psd_files(self, directory: str) -> List[str]:
@@ -189,10 +247,17 @@ class PSDProcessor:
             PSDファイルのパスリスト
         """
         psd_files = []
-        for root, dirs, files in os.walk(directory):
-            for file in files:
-                if file.lower().endswith('.psd'):
-                    psd_files.append(os.path.join(root, file))
+        # Pathオブジェクトを使用して日本語パスを正しく処理
+        dir_path = Path(directory)
+        for psd_path in dir_path.rglob('*.psd'):
+            if psd_path.is_file():
+                psd_files.append(str(psd_path))
+        # 大文字小文字を区別しない検索も追加
+        for psd_path in dir_path.rglob('*.PSD'):
+            if psd_path.is_file():
+                file_str = str(psd_path)
+                if file_str not in psd_files:  # 重複を避ける
+                    psd_files.append(file_str)
         return sorted(psd_files)
     
     def batch_process(
@@ -218,17 +283,22 @@ class PSDProcessor:
         """
         results = []
         total = len(input_paths)
+        log_debug(f"batch_process: total={total} files, output_dir={output_dir}")
         
         for i, input_path in enumerate(input_paths):
+            log_debug(f"batch_process: 処理開始 [{i+1}/{total}]: {input_path}")
             result = self.process_file(input_path, output_dir, force_convert, invert)
+            log_debug(f"batch_process: 処理完了 [{i+1}/{total}]: status={result.status}, message={result.message}")
             results.append(result)
             
             if progress_callback:
                 # コールバックがFalseを返したら処理を中断
                 should_continue = progress_callback(i + 1, total, result)
                 if should_continue is False:
+                    log_debug("batch_process: キャンセルされました")
                     break
         
+        log_debug(f"batch_process: 全処理完了: {len(results)}件")
         return results
 
 
@@ -239,9 +309,13 @@ class PNGInverter:
     def load_png(file_path: str) -> Optional[Image.Image]:
         """PNGファイルを読み込み"""
         try:
-            return Image.open(file_path)
+            # Pathオブジェクトに変換してから文字列に戻すことで、エンコーディング問題を回避
+            path = Path(file_path)
+            return Image.open(str(path))
         except Exception as e:
-            print(f"Error loading PNG: {file_path}, {e}")
+            error_msg = f"PNGファイルの読み込みエラー: {file_path}, {e}"
+            log_error(error_msg, e)
+            print(error_msg)
             return None
     
     @staticmethod
@@ -260,9 +334,13 @@ class PNGInverter:
     def save_png(image: Image.Image, output_path: str) -> bool:
         """PNGファイルを保存"""
         try:
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            image.save(output_path, 'PNG')
+            # Pathオブジェクトを使用してディレクトリ作成とパス処理を行う
+            path = Path(output_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            image.save(str(path), 'PNG')
             return True
         except Exception as e:
-            print(f"Error saving PNG: {output_path}, {e}")
+            error_msg = f"PNGファイルの保存エラー: {output_path}, {e}"
+            log_error(error_msg, e)
+            print(error_msg)
             return False

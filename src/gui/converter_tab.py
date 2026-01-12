@@ -12,6 +12,16 @@ from threading import Thread
 from typing import List, Optional
 
 from ..psd_processor import PSDProcessor, BinarizationStatus, ProcessingResult
+
+# ロガーをインポート
+try:
+    from ..utils.logger import log_error, log_debug
+except ImportError:
+    try:
+        from ..utils.logger_simple import log_error, log_debug
+    except ImportError:
+        def log_error(message: str, exception=None): pass
+        def log_debug(message: str): pass
 from .styles import COLORS, FONTS, SPACING
 
 
@@ -123,14 +133,16 @@ class ConverterTab(ttk.Frame):
         self.tree_frame = ttk.Frame(self.list_content, style='Card.TFrame')
         self.file_tree = ttk.Treeview(
             self.tree_frame,
-            columns=('status', 'message'),
+            columns=('status', 'filename', 'message'),
             show='headings',
             height=8
         )
         self.file_tree.heading('status', text='ステータス')
-        self.file_tree.heading('message', text='ファイル / メッセージ')
+        self.file_tree.heading('filename', text='ファイル名')
+        self.file_tree.heading('message', text='メッセージ')
         self.file_tree.column('status', width=120, anchor='center')
-        self.file_tree.column('message', width=500)
+        self.file_tree.column('filename', width=300)
+        self.file_tree.column('message', width=300)
         
         self.tree_scroll = ttk.Scrollbar(
             self.tree_frame,
@@ -287,7 +299,7 @@ class ConverterTab(ttk.Frame):
         
         # ファイルを追加
         for file_path in self.psd_files:
-            self.file_tree.insert('', 'end', values=('待機中', file_path))
+            self.file_tree.insert('', 'end', values=('待機中', file_path, ''))
         
         self.file_count_label.config(text=f"ファイル数: {len(self.psd_files)}")
     
@@ -379,24 +391,32 @@ class ConverterTab(ttk.Frame):
         """ファイルを処理（バックグラウンドスレッド）"""
         processed_count = 0
         
+        log_debug(f"_process_files開始: ファイル数={len(self.psd_files)}, output_dir={output_dir}")
+        
         def progress_callback(current, total, result):
             nonlocal processed_count
             processed_count = current
+            log_debug(f"progress_callback: {current}/{total}, status={result.status}, message={result.message}")
             self.after(0, lambda c=current, t=total, r=result: self._update_progress(c, t, r))
             # キャンセルチェック
             return not self.cancel_requested
         
         try:
+            log_debug(f"batch_process開始: {len(self.psd_files)}ファイル")
             self.processor.batch_process(
                 self.psd_files,
                 output_dir,
                 invert=self.invert_var.get(),
                 progress_callback=progress_callback
             )
+            log_debug("batch_process完了")
         except Exception as e:
+            log_error(f"_process_filesで例外発生", e)
+            log_debug(f"_process_filesで例外発生: {type(e).__name__}: {e}")
             if not self.cancel_requested:
                 self.after(0, lambda: messagebox.showerror("エラー", f"処理中にエラーが発生しました: {e}"))
         finally:
+            log_debug("_process_files終了")
             self.after(0, lambda: self._finish_processing(cancelled=self.cancel_requested))
     
     def _update_progress(self, current: int, total: int, result: ProcessingResult):
@@ -420,6 +440,10 @@ class ConverterTab(ttk.Frame):
         if current <= len(items):
             item = items[current - 1]
             
+            # 現在のファイルパスを取得（既存の値を保持）
+            current_values = self.file_tree.item(item, 'values')
+            file_path = current_values[1] if len(current_values) > 1 else result.file_path
+            
             # ステータスに応じた表示
             if result.status == BinarizationStatus.BINARIZED:
                 status_text = "✓ 二値化済"
@@ -428,7 +452,7 @@ class ConverterTab(ttk.Frame):
             else:
                 status_text = "✗ エラー"
             
-            self.file_tree.item(item, values=(status_text, result.message))
+            self.file_tree.item(item, values=(status_text, file_path, result.message))
     
     def _finish_processing(self, cancelled: bool = False):
         """処理完了"""

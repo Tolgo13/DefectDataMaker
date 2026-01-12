@@ -13,3 +13,7 @@ ENV/
 !requirements.txt
 !main.py
 !src/**
+
+# PyInstaller
+build/
+dist/

@@ -24,7 +24,7 @@ class InverterTab(ttk.Frame):
         self.png_files: List[str] = []
         self.current_image: Optional[Image.Image] = None
         self.current_index: int = 0
-        self.preview_size = (300, 300)
+        self.preview_size = (250, 250)
         
         self._create_widgets()
         self._layout_widgets()
@@ -124,7 +124,7 @@ class InverterTab(ttk.Frame):
         # 矢印
         self.arrow_label = ttk.Label(
             self.preview_frame,
-            text="→",
+            text="↓",
             style='Card.TLabel',
             font=(FONTS['family'], FONTS['size_xlarge']),
         )
@@ -236,13 +236,13 @@ class InverterTab(ttk.Frame):
         self.center_content.pack(fill='both', expand=True, padx=SPACING['md'], pady=(0, SPACING['md']))
         
         self.preview_frame.pack(fill='both', expand=True)
-        self.original_frame.pack(side='left', padx=(0, SPACING['sm']))
+        self.original_frame.pack(fill='x', pady=(0, SPACING['sm']))
         self.original_label.pack()
         self.original_canvas.pack()
         
-        self.arrow_label.pack(side='left', padx=SPACING['md'])
+        self.arrow_label.pack(pady=SPACING['xs'])
         
-        self.inverted_frame.pack(side='left', padx=(SPACING['sm'], 0))
+        self.inverted_frame.pack(fill='x', pady=(SPACING['sm'], 0))
         self.inverted_label.pack()
         self.inverted_canvas.pack()
         
@@ -301,8 +301,7 @@ class InverterTab(ttk.Frame):
         """ファイルリストを更新"""
         self.file_listbox.delete(0, tk.END)
         for file_path in self.png_files:
-            filename = os.path.basename(file_path)
-            self.file_listbox.insert(tk.END, filename)
+            self.file_listbox.insert(tk.END, file_path)
         
         self.file_count_label.config(text=f"ファイル数: {len(self.png_files)}")
         
@@ -345,19 +344,32 @@ class InverterTab(ttk.Frame):
             self.original_photo = ImageTk.PhotoImage(original_preview)
             self.inverted_photo = ImageTk.PhotoImage(inverted_preview)
             
+            # キャンバスサイズを画像サイズに合わせて更新
+            orig_width, orig_height = original_preview.size
+            inv_width, inv_height = inverted_preview.size
+            
+            # キャンバスサイズを更新（画像サイズに合わせる、最大値はpreview_size）
+            orig_canvas_width = min(orig_width, self.preview_size[0])
+            orig_canvas_height = min(orig_height, self.preview_size[1])
+            self.original_canvas.config(width=orig_canvas_width, height=orig_canvas_height)
+            
+            inv_canvas_width = min(inv_width, self.preview_size[0])
+            inv_canvas_height = min(inv_height, self.preview_size[1])
+            self.inverted_canvas.config(width=inv_canvas_width, height=inv_canvas_height)
+            
             # キャンバスに表示
             self.original_canvas.delete('all')
             self.inverted_canvas.delete('all')
             
             self.original_canvas.create_image(
-                self.preview_size[0] // 2,
-                self.preview_size[1] // 2,
+                orig_canvas_width // 2,
+                orig_canvas_height // 2,
                 image=self.original_photo,
                 anchor='center'
             )
             self.inverted_canvas.create_image(
-                self.preview_size[0] // 2,
-                self.preview_size[1] // 2,
+                inv_canvas_width // 2,
+                inv_canvas_height // 2,
                 image=self.inverted_photo,
                 anchor='center'
             )
@@ -367,9 +379,21 @@ class InverterTab(ttk.Frame):
     
     def _resize_for_preview(self, image: Image.Image) -> Image.Image:
         """プレビュー用にリサイズ"""
-        # アスペクト比を維持してリサイズ
-        image.thumbnail(self.preview_size, Image.Resampling.LANCZOS)
-        return image
+        # アスペクト比を維持してリサイズ（全表示できるように）
+        # キャンバスサイズに合わせてリサイズ
+        max_width, max_height = self.preview_size
+        img_width, img_height = image.size
+        
+        # アスペクト比を計算
+        width_ratio = max_width / img_width
+        height_ratio = max_height / img_height
+        ratio = min(width_ratio, height_ratio)
+        
+        # リサイズ
+        new_width = int(img_width * ratio)
+        new_height = int(img_height * ratio)
+        
+        return image.resize((new_width, new_height), Image.Resampling.LANCZOS)
     
     def _start_inversion(self):
         """反転を開始"""
