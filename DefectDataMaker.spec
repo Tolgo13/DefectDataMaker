@@ -1,0 +1,101 @@
+# -*- mode: python ; coding: utf-8 -*-
+
+block_cipher = None
+
+a = Analysis(
+    ['main.py'],
+    pathex=[],
+    binaries=[],
+    datas=[],
+    hiddenimports=[
+        'PIL._tkinter_finder',
+        'PIL.Image',
+        'PIL.ImageTk',
+        'psd_tools',
+        'psd_tools.api',
+        'psd_tools.version',
+        'psd_tools.constants',
+        'psd_tools.psd',
+        'numpy',
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[
+        # 不要な大きなライブラリを除外
+        'torch',
+        'tensorflow',
+        'pandas',
+        # 'scipy',  # psd_toolsが使用するため除外しない
+        'sklearn',
+        'matplotlib',
+        'cv2',
+        # 'skimage',  # psd_toolsが使用するため除外しない
+        'sympy',
+        'IPython',
+        'jupyter',
+        'pytest',
+        'setuptools',
+        'distutils',
+        'pkg_resources',
+        'win32com',
+        'win32api',
+        'win32con',
+        'win32gui',
+        'win32service',
+        'win32serviceutil',
+        'win32evtlog',
+        'win32timezone',
+        'win32file',
+        'win32pipe',
+        'win32process',
+        'win32security',
+        'win32event',
+        'win32clipboard',
+        'win32profile',
+        'win32ts',
+        'win32net',
+        'win32netcon',
+        'win32wnet',
+        'win32crypt',
+        'win32job',
+        'win32print',
+        'win32pdh',
+        'win32traceutil',
+        'win32trace',
+        'win32ui',
+        'win32uiole',
+        'win32verstamp',
+        'win32wnet',
+    ],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    [],
+    name='DefectDataMaker_v1.4',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=False,  # GUIアプリのためコンソールを非表示
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=None,  # アイコンファイルがあれば指定
+    version_file=None,  # バージョン情報ファイルがあれば指定
+)
