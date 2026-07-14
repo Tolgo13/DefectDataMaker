@@ -10,6 +10,7 @@ from .styles import COLORS, FONTS, SPACING, configure_styles
 from .converter_tab import ConverterTab
 from .inverter_tab import InverterTab
 from .comparator_tab import ComparatorTab
+from .duplicate_tab import DuplicateTab
 
 # ロガーをインポートしてテスト
 try:
@@ -26,7 +27,7 @@ class MainApplication(tk.Tk):
     def __init__(self):
         super().__init__()
         
-        self.title("PSD to PNG Converter ver.1.3")
+        self.title("PSD to PNG Converter ver.1.4")
         self.geometry("900x1100")
         self.minsize(700, 900)
         
@@ -51,7 +52,7 @@ class MainApplication(tk.Tk):
         )
         self.app_subtitle = ttk.Label(
             self.header_frame,
-            text="教師データ作成ツール ver.1.3",
+            text="教師データ作成ツール ver.1.4",
             style='Subtitle.TLabel'
         )
         
@@ -62,10 +63,12 @@ class MainApplication(tk.Tk):
         self.converter_tab = ConverterTab(self.notebook)
         self.inverter_tab = InverterTab(self.notebook)
         self.comparator_tab = ComparatorTab(self.notebook)
-        
+        self.duplicate_tab = DuplicateTab(self.notebook)
+
         self.notebook.add(self.converter_tab, text="  📄 PSD変換  ")
         self.notebook.add(self.inverter_tab, text="  🔄 白黒反転  ")
         self.notebook.add(self.comparator_tab, text="  🔍 ファイル比較  ")
+        self.notebook.add(self.duplicate_tab, text="  🧩 重複検出  ")
     
     def _layout_widgets(self):
         """ウィジェットを配置"""

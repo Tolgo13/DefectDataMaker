@@ -1,6 +1,6 @@
 """
 ファイル比較タブ
-imageフォルダとmasakフォルダのファイルを比較するUIコンポーネント
+imageフォルダとmaskフォルダのファイルを比較するUIコンポーネント
 """
 
 import os
@@ -20,7 +20,7 @@ class ComparatorTab(ttk.Frame):
         super().__init__(parent, style='Dark.TFrame')
         
         self.image_folder: str = ""
-        self.masak_folder: str = ""
+        self.mask_folder: str = ""
         self.comparison_results: List[Dict] = []
         
         self._create_widgets()
@@ -37,7 +37,7 @@ class ComparatorTab(ttk.Frame):
         )
         self.subtitle_label = ttk.Label(
             self.header_frame,
-            text="imageフォルダとmasakフォルダのファイルを比較します",
+            text="imageフォルダとmaskフォルダのファイルを比較します",
             style='Subtitle.TLabel'
         )
         
@@ -65,24 +65,24 @@ class ComparatorTab(ttk.Frame):
             command=self._select_image_folder
         )
         
-        # masakフォルダ
-        self.masak_frame = ttk.Frame(self.folder_content, style='Card.TFrame')
-        self.masak_label = ttk.Label(
-            self.masak_frame,
-            text="masakフォルダ:",
+        # maskフォルダ
+        self.mask_frame = ttk.Frame(self.folder_content, style='Card.TFrame')
+        self.mask_label = ttk.Label(
+            self.mask_frame,
+            text="maskフォルダ:",
             style='Card.TLabel'
         )
-        self.masak_path_var = tk.StringVar()
-        self.masak_entry = ttk.Entry(
-            self.masak_frame,
-            textvariable=self.masak_path_var,
+        self.mask_path_var = tk.StringVar()
+        self.mask_entry = ttk.Entry(
+            self.mask_frame,
+            textvariable=self.mask_path_var,
             width=60,
         )
-        self.btn_select_masak = ttk.Button(
-            self.masak_frame,
+        self.btn_select_mask = ttk.Button(
+            self.mask_frame,
             text="📁 選択",
             style='Outline.TButton',
-            command=self._select_masak_folder
+            command=self._select_mask_folder
         )
         
         # 比較実行ボタン
@@ -109,20 +109,20 @@ class ComparatorTab(ttk.Frame):
         self.tree_frame = ttk.Frame(self.result_content, style='Card.TFrame')
         self.result_tree = ttk.Treeview(
             self.tree_frame,
-            columns=('type', 'filename', 'image_exists', 'masak_exists', 'status'),
+            columns=('type', 'filename', 'image_exists', 'mask_exists', 'status'),
             show='headings',
             height=15
         )
         self.result_tree.heading('type', text='種類')
         self.result_tree.heading('filename', text='ファイル名')
         self.result_tree.heading('image_exists', text='image')
-        self.result_tree.heading('masak_exists', text='masak')
+        self.result_tree.heading('mask_exists', text='mask')
         self.result_tree.heading('status', text='ステータス')
         
         self.result_tree.column('type', width=100, anchor='center')
         self.result_tree.column('filename', width=300)
         self.result_tree.column('image_exists', width=80, anchor='center')
-        self.result_tree.column('masak_exists', width=80, anchor='center')
+        self.result_tree.column('mask_exists', width=80, anchor='center')
         self.result_tree.column('status', width=200)
         
         self.tree_scroll = ttk.Scrollbar(
@@ -166,10 +166,10 @@ class ComparatorTab(ttk.Frame):
         self.image_entry.pack(side='left', fill='x', expand=True, padx=(0, SPACING['sm']))
         self.btn_select_image.pack(side='right')
         
-        self.masak_frame.pack(fill='x', pady=(0, SPACING['md']))
-        self.masak_label.pack(side='left', padx=(0, SPACING['sm']))
-        self.masak_entry.pack(side='left', fill='x', expand=True, padx=(0, SPACING['sm']))
-        self.btn_select_masak.pack(side='right')
+        self.mask_frame.pack(fill='x', pady=(0, SPACING['md']))
+        self.mask_label.pack(side='left', padx=(0, SPACING['sm']))
+        self.mask_entry.pack(side='left', fill='x', expand=True, padx=(0, SPACING['sm']))
+        self.btn_select_mask.pack(side='right')
         
         self.btn_compare.pack(pady=(SPACING['sm'], 0))
         
@@ -195,12 +195,12 @@ class ComparatorTab(ttk.Frame):
             self.image_folder = folder
             self.image_path_var.set(folder)
     
-    def _select_masak_folder(self):
-        """masakフォルダを選択"""
-        folder = filedialog.askdirectory(title="masakフォルダを選択")
+    def _select_mask_folder(self):
+        """maskフォルダを選択"""
+        folder = filedialog.askdirectory(title="maskフォルダを選択")
         if folder:
-            self.masak_folder = folder
-            self.masak_path_var.set(folder)
+            self.mask_folder = folder
+            self.mask_path_var.set(folder)
     
     def _get_files_in_folder(self, folder: str) -> Set[str]:
         """フォルダ内の全ファイル名を取得（拡張子なし）"""
@@ -222,24 +222,24 @@ class ComparatorTab(ttk.Frame):
             messagebox.showwarning("警告", "imageフォルダを選択してください。")
             return
         
-        if not self.masak_folder or not os.path.exists(self.masak_folder):
-            messagebox.showwarning("警告", "masakフォルダを選択してください。")
+        if not self.mask_folder or not os.path.exists(self.mask_folder):
+            messagebox.showwarning("警告", "maskフォルダを選択してください。")
             return
         
         # ファイル名を取得
         image_files = self._get_files_in_folder(self.image_folder)
-        masak_files = self._get_files_in_folder(self.masak_folder)
+        mask_files = self._get_files_in_folder(self.mask_folder)
         
         # 比較結果を格納
         self.comparison_results = []
         
         # 全ファイル名の集合
-        all_files = image_files | masak_files
+        all_files = image_files | mask_files
         
         # 各ファイルについて比較
         for filename in sorted(all_files):
             in_image = filename in image_files
-            in_masak = filename in masak_files
+            in_mask = filename in mask_files
             
             if not in_image:
                 # imageフォルダに存在しない
@@ -247,17 +247,17 @@ class ComparatorTab(ttk.Frame):
                     'type': '不足',
                     'filename': filename,
                     'image_exists': '✗',
-                    'masak_exists': '✓',
+                    'mask_exists': '✓',
                     'status': 'imageフォルダに存在しません'
                 }
-            elif not in_masak:
-                # masakフォルダに存在しない
+            elif not in_mask:
+                # maskフォルダに存在しない
                 result = {
                     'type': '不足',
                     'filename': filename,
                     'image_exists': '✓',
-                    'masak_exists': '✗',
-                    'status': 'masakフォルダに存在しません'
+                    'mask_exists': '✗',
+                    'status': 'maskフォルダに存在しません'
                 }
             else:
                 # 両方に存在（正常）
@@ -265,7 +265,7 @@ class ComparatorTab(ttk.Frame):
                     'type': '一致',
                     'filename': filename,
                     'image_exists': '✓',
-                    'masak_exists': '✓',
+                    'mask_exists': '✓',
                     'status': '両フォルダに存在'
                 }
             
@@ -285,8 +285,8 @@ class ComparatorTab(ttk.Frame):
         
         # 統計情報を計算
         total = len(self.comparison_results)
-        missing_in_image = sum(1 for r in self.comparison_results if r['type'] == '不足' and r['masak_exists'] == '✓')
-        missing_in_masak = sum(1 for r in self.comparison_results if r['type'] == '不足' and r['image_exists'] == '✓')
+        missing_in_image = sum(1 for r in self.comparison_results if r['type'] == '不足' and r['mask_exists'] == '✓')
+        missing_in_mask = sum(1 for r in self.comparison_results if r['type'] == '不足' and r['image_exists'] == '✓')
         matched = sum(1 for r in self.comparison_results if r['type'] == '一致')
         
         # 統計情報を表示
@@ -294,7 +294,7 @@ class ComparatorTab(ttk.Frame):
             f"総ファイル数: {total} | "
             f"一致: {matched} | "
             f"image不足: {missing_in_image} | "
-            f"masak不足: {missing_in_masak}"
+            f"mask不足: {missing_in_mask}"
         )
         self.stats_label.config(text=stats_text)
         
@@ -306,7 +306,7 @@ class ComparatorTab(ttk.Frame):
                     result['type'],
                     result['filename'],
                     result['image_exists'],
-                    result['masak_exists'],
+                    result['mask_exists'],
                     result['status']
                 ))
     
@@ -331,7 +331,7 @@ class ComparatorTab(ttk.Frame):
                 writer = csv.writer(f)
                 
                 # ヘッダー
-                writer.writerow(['種類', 'ファイル名', 'image', 'masak', 'ステータス'])
+                writer.writerow(['種類', 'ファイル名', 'image', 'mask', 'ステータス'])
                 
                 # データ（不足ファイルのみ）
                 for result in self.comparison_results:
@@ -340,7 +340,7 @@ class ComparatorTab(ttk.Frame):
                             result['type'],
                             result['filename'],
                             result['image_exists'],
-                            result['masak_exists'],
+                            result['mask_exists'],
                             result['status']
                         ])
             
