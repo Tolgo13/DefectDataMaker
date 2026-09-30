@@ -27,10 +27,10 @@ body {
   font-family: "Yu Gothic UI", "Yu Gothic", "Meiryo", "Hiragino Sans", "Noto Sans JP", sans-serif;
   font-size: 14px;
 }
-.app { display: flex; min-height: 100vh; }
+.app { display: flex; min-height: 100vh; align-items: flex-start; }
 .side {
   width: 360px; flex: none; background: var(--panel); border-right: 1px solid var(--line);
-  padding: 14px 16px 40px; overflow-y: auto; max-height: 100vh; position: sticky; top: 0;
+  padding: 14px 16px 40px; overflow-y: auto; height: 100vh; position: sticky; top: 0;
 }
 .side h1 { font-size: 18px; margin: 0 0 4px; }
 .side .sub { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
@@ -49,12 +49,13 @@ body {
 label.inline { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 4px 0; }
 select, input[type=text] { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 5px; background: #fff; max-width: 100%; }
 .info { font-size: 12px; background: #f9fafb; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 6px 0; line-height: 1.6; white-space: pre-wrap; }
+.save-state { font-size: 12px; margin: 4px 0; }
+.save-state.dirty { color: var(--warn); font-weight: 600; }
+.save-state.clean { color: var(--ok); }
 .map-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .map-table td { padding: 3px 2px; vertical-align: middle; }
 .map-table td:first-child { white-space: nowrap; color: var(--muted); padding-right: 6px; }
 .map-table select { width: 100%; font-size: 12px; }
-.note-list { max-height: 170px; overflow-y: auto; border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; font-size: 12px; }
-.note-list label { display: block; margin: 2px 0; }
 details > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
 
 .main { flex: 1; min-width: 0; padding: 12px 16px 40px; }
@@ -73,12 +74,13 @@ details > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
 .preview-scale { transform-origin: top left; }
 .preview-scale .sheet { box-shadow: 0 1px 6px rgba(0,0,0,.18); }
 .empty-msg { color: var(--muted); padding: 40px 10px; text-align: center; line-height: 1.8; }
+.edit-hint { font-size: 12px; color: var(--muted); margin: 0 0 6px; }
 
 #status { font-size: 12px; margin-top: 8px; color: var(--muted); white-space: pre-wrap; line-height: 1.5; }
 #status.warn { color: var(--warn); }
 
 .dropping::after {
-  content: "ここにドロップ(画像フォルダ / 画像 / Excel)"; position: fixed; inset: 0; z-index: 50;
+  content: "ここにドロップ(画像フォルダ / 画像 / Excel / 保存したカルテ)"; position: fixed; inset: 0; z-index: 50;
   display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--accent);
   background: rgba(219,234,254,.85); border: 4px dashed var(--accent);
 }
@@ -89,61 +91,83 @@ details > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
 #busy .box { background: #fff; padding: 18px 26px; border-radius: 8px; font-size: 15px; }
 
 @media (max-width: 800px) {
-  .app { flex-direction: column; }
-  .side { width: auto; max-height: none; position: static; border-right: none; border-bottom: 1px solid var(--line); }
+  .app { flex-direction: column; align-items: stretch; }
+  .side { width: auto; height: auto; position: static; border-right: none; border-bottom: 1px solid var(--line); }
 }
 
 /* ===================== カルテ用紙(A4)のデザイン =====================
    元のPDFの比率に合わせて mm 単位で作っています。
-   用紙 210×297mm、上下 10mm・左右 20mm の余白、中身の幅 170mm。 */
+   用紙 210×297mm、上下 10mm・左右 15mm の余白、中身は 幅180mm × 高さ277mm。
+   列の幅:見出し 23.5mm / 18mm / 30.5mm / 18mm / 残り(90mm) */
 .sheet {
-  width: 210mm; height: 297mm; padding: 10mm 20mm; background: #fff; color: #000;
+  width: 210mm; height: 297mm; padding: 10mm 15mm; background: #fff; color: #000;
   font-family: "MS PGothic", "Yu Gothic", "Meiryo", "Hiragino Sans", "Noto Sans JP", sans-serif;
   overflow: hidden;
 }
-.form { width: 170mm; height: 277mm; display: flex; flex-direction: column; }
-.f-head {
-  height: 8mm; flex: none; display: flex; align-items: flex-end; gap: 2mm;
-  border-bottom: 0.5mm solid #000; padding-bottom: 0.6mm; font-size: 9pt;
-}
-.f-head .lbl { flex: none; }
-.f-head .num { width: 44mm; flex: none; font-size: 12pt; font-weight: bold; }
-/* 名称:1行なら下にそろえ、長いときは最大2行分(7mm)まで広げて、入らなければ文字を小さくする */
-.f-head .name { flex: 1; display: block; max-height: 7mm; font-size: 11pt; line-height: 1.15; overflow: hidden; }
-.f-sub { height: 4.5mm; flex: none; display: grid; grid-template-columns: 22.6mm 47.4mm 31.5mm 1fr; font-size: 8.5pt; align-items: end; }
-.f-sub span { padding-left: 1mm; }
+.form { width: 180mm; height: 277mm; display: flex; flex-direction: column; }
+
+/* 上の表(太枠の中) */
 .f-grid {
   flex: none; display: grid; font-size: 8.5pt;
-  grid-template-columns: 22.6mm 47.4mm 31.5mm 1fr;
-  grid-template-rows: 5.5mm 5.5mm 5.5mm 10mm 10mm 65mm;
-  border-top: 0.2mm solid #bbb; border-left: 0.2mm solid #bbb;
+  grid-template-columns: 23.5mm 18mm 30.5mm 18mm 1fr;
+  /*                 番号 旧番号 紀年 朱角印 史料中 紙背 寸法  料紙  付属 補強 損傷 処置 */
+  grid-template-rows: 8mm 5mm   5mm  5mm   8mm    5mm  5.5mm 5.5mm 5mm  6mm  12mm 13.5mm;
+  border: 0.4mm solid #000;
 }
-.f-grid > div { border-right: 0.2mm solid #bbb; border-bottom: 0.2mm solid #bbb; padding: 0.3mm 1mm; overflow: hidden; min-width: 0; }
-.f-grid .lbl { line-height: 1.15; }
-.f-grid .span3 { grid-column: 2 / 5; }
-.f-grid .v { font-size: 9pt; line-height: 1.15; }
-.dim { display: flex; align-items: center; }
-.dim .dv { flex: 1; text-align: center; font-size: 9pt; }
-.dim .x { flex: none; width: 8mm; text-align: center; }
-.checks { display: grid; grid-template-columns: 47.4mm 31.5mm 38mm 1fr; margin-left: -1mm; }
-.checks span { padding-left: 1mm; }
-.other { display: flex; gap: 2mm; line-height: 1.15; }
-.other .v { flex: 1; overflow: hidden; height: 4.4mm; }
-.note-lbl small { display: block; font-size: 6.5pt; margin-top: 1.2mm; line-height: 1.5; }
-.note { height: 100%; white-space: pre-wrap; font-size: 9pt; line-height: 1.35; overflow: hidden; }
-.v { white-space: pre-wrap; overflow-wrap: anywhere; }
+.f-grid > div { border-right: 0.2mm solid #aaa; border-bottom: 0.2mm solid #aaa; padding: 0.2mm 1mm; overflow: hidden; min-width: 0; min-height: 0; }
+.f-grid .lbl { white-space: nowrap; line-height: 1.2; display: flex; align-items: center; }
+.f-grid .lbl.c { justify-content: center; }
+.f-grid .last { border-right: none; }
+.f-grid .s25 { grid-column: 2 / 6; }   /* 2列目から5列目まで結合 */
+.f-grid .s23 { grid-column: 2 / 4; }   /* 2列目から3列目まで結合 */
+.f-grid .bottom { border-bottom: none; }
 
-.photo { flex: none; height: 80mm; border: 0.35mm solid #000; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #fff; }
+/* 値(Excelから入る文字/手入力する文字) */
+.v { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 9pt; line-height: 1.2; overflow: hidden; }
+/* 表のマス目の中の文字欄は、マス目の高さいっぱいに広げる(はみ出しを正しく判定するため) */
+.f-grid > div > .v { height: 100%; }
+.v.c { text-align: center; }
+.v.num { font-size: 16pt; font-weight: bold; text-align: center; line-height: 1.1; }
+.v.name { font-size: 11pt; }
+
+/* 損傷・処置内容(手書きで丸を付ける欄) */
+.mark-row { display: flex; }
+.mark-row .mlbl { width: 23.5mm; flex: none; display: flex; align-items: center; justify-content: center; border-right: none; }
+.marks { flex: 1; padding-left: 18mm; display: flex; flex-direction: column; justify-content: space-around; font-size: 8.5pt; }
+.marks .line { display: grid; grid-template-columns: 31mm 47mm 33.7mm 1fr; }
+.marks .line2 { display: grid; grid-template-columns: 49mm 1fr; }
+.marks .other { display: flex; gap: 2mm; }
+.marks .other .v { flex: 1; height: 4.2mm; }
+.f-grid .mark-row { grid-column: 1 / 6; padding: 0; }
+
+/* 備考(太枠の下) */
+.f-note {
+  flex: none; height: 33mm; display: grid; grid-template-columns: 23.5mm 18mm 1fr;
+  border-left: 0.2mm solid #aaa; font-size: 8.5pt;
+}
+.f-note > div { border-right: 0.2mm solid #aaa; padding: 0.5mm 1mm; overflow: hidden; min-width: 0; }
+.f-note .note-lbl small { display: block; font-size: 6.5pt; margin-top: 1mm; line-height: 1.6; }
+.f-note .v { height: 100%; }
+
+/* 写真枠 */
+.photo { flex: 1; min-height: 0; border: 0.4mm solid #000; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #fff; }
 .photo img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
 .photo.p1 { border-bottom: none; }
-.strip { flex: none; height: 6mm; border-left: 0.35mm solid #000; border-right: 0.35mm solid #000; border-top: 0.2mm solid #bbb; border-bottom: 0.2mm solid #bbb; }
-.photo.p2 { flex: 1; border-top: none; }
+.strip { flex: none; height: 5.5mm; border-left: 0.4mm solid #000; border-right: 0.4mm solid #000; border-top: 0.2mm solid #aaa; border-bottom: 0.2mm solid #aaa; }
+.photo.p2 { border-top: none; }
 .photo .ph { font-size: 44pt; color: #c7c7c7; border: 0.6mm solid #c7c7c7; border-radius: 50%; width: 24mm; height: 24mm; display: flex; align-items: center; justify-content: center; }
 .photo.interactive { cursor: pointer; }
 .photo.interactive:hover { outline: 3px solid var(--accent); outline-offset: -3px; }
 .photo .tip { position: absolute; bottom: 2mm; right: 2mm; font-size: 9pt; background: rgba(255,255,255,.85); color: var(--accent); padding: 1px 6px; border-radius: 4px; display: none; }
 .photo.interactive:hover .tip { display: block; }
 .photo.drag-over { outline: 4px dashed var(--accent); outline-offset: -4px; background: var(--accent-weak); }
+
+/* 画面上だけ:手入力できる欄の見た目(印刷には出ない) */
+.editable .v[contenteditable] { cursor: text; outline: none; }
+.editable .v[contenteditable]:hover { background: #eff6ff; }
+.editable .v[contenteditable]:focus { background: #fff; box-shadow: inset 0 0 0 2px var(--accent); }
+.editable .v.edited { background: #fef9c3; }
+.editable .v:empty::before { content: attr(data-ph); color: #f19999; }
 
 /* 印刷用エリア:画面では見えない場所に置く */
 #printArea { position: fixed; left: -100000px; top: 0; }
@@ -168,6 +192,17 @@ details > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
     <p class="sub">Excelの一覧表と写真を番号で結びつけて、カルテ(A4)を作ります。データはこのパソコンの中だけで処理され、外部には送信されません。</p>
 
     <div class="sec">
+      <h2>保存・続きから作業</h2>
+      <input type="file" id="projectInput" accept=".karte" hidden>
+      <div class="row">
+        <button class="btn primary" id="saveBtn">カルテを保存</button>
+        <button class="btn" id="openBtn">保存したカルテを開く</button>
+      </div>
+      <div class="save-state" id="saveState">まだ何も読み込んでいません。</div>
+      <p class="hint">「カルテを保存」で、Excelの内容・写真・手入力した内容をまとめて1つのファイル(.karte)に保存します。次回は「保存したカルテを開く」でそのファイルを選ぶと、続きから作業できます。</p>
+    </div>
+
+    <div class="sec">
       <h2>1. Excelを読み込む</h2>
       <input type="file" id="excelInput" accept=".xlsx,.xlsm,.xls" hidden>
       <button class="btn primary" id="excelBtn">Excelファイルを選択</button>
@@ -178,7 +213,7 @@ details > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
         <span>番号の列:</span><select id="numberColSelect" disabled><option>(Excel未読込)</option></select>
       </div>
       <div class="info" id="excelInfo">まだ読み込んでいません。</div>
-      <p class="hint">Excelを書き直したときは、もう一度「Excelファイルを選択」で選び直してください(画像はそのまま残ります)。</p>
+      <p class="hint">Excelを書き直したときは、もう一度「Excelファイルを選択」で選び直してください(画像と手入力した内容はそのまま残ります)。</p>
     </div>
 
     <div class="sec">
@@ -216,11 +251,9 @@ details > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
     <div class="sec">
       <details id="mapDetails">
         <summary>3. 項目の対応(Excelのどの列をどこに表示するか)</summary>
-        <p class="hint">Excelを読み込むと、見出しの名前で選べるようになります。設定はこのブラウザに保存されます。</p>
+        <p class="hint">最初はカルテ様式の赤字(A、C、B…)の列が選ばれています。設定はこのブラウザと保存ファイルに記録されます。</p>
         <table class="map-table" id="mapTable"></table>
-        <p class="hint" style="margin-top:10px">備考欄に表示する列(複数選べます)</p>
-        <div class="note-list" id="noteList"><span class="hint">Excel未読込</span></div>
-        <label class="inline"><input type="checkbox" id="noteHeading" checked> 備考に見出し名を付ける(例「紀年西暦表示:18960615」)</label>
+        <div class="row"><button class="btn" id="resetMapBtn">最初の対応に戻す</button></div>
       </details>
     </div>
 
@@ -253,10 +286,10 @@ details > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
       <button class="btn" id="swapBtn">①と②を入れ替え</button>
       <button class="btn" id="clearFrontBtn">①の画像を外す</button>
       <button class="btn" id="clearBackBtn">②の画像を外す</button>
+      <button class="btn" id="revertBtn">この番号の手入力を取り消す(Excelの値に戻す)</button>
     </div>
-    <div class="preview-wrap" id="previewWrap">
-      <div class="empty-msg">左の「1. Excelを読み込む」「2. 画像を読み込む」から始めてください。<br>画像やフォルダをこの画面にドラッグ&ドロップしても読み込めます。</div>
-    </div>
+    <p class="edit-hint" id="editHint">カルテの文字欄をクリックすると、直接入力・修正できます(手入力した欄は黄色で表示、印刷には色は出ません)。</p>
+    <div class="preview-wrap" id="previewWrap"></div>
     <input type="file" id="slotInput" accept="image/*" hidden>
   </main>
 </div>
@@ -273,47 +306,69 @@ details > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
      1) Excel を読み込む  → 「番号」列をキー(目印)にして、各行のデータを覚える
      2) 画像を読み込む    → ファイル名から番号を取り出し、①表/②裏 に振り分ける
      3) 番号ごとにカルテを作る → Excel の値と画像をカルテ用紙に流し込む
-     4) 全部まとめて印刷(PDF保存)
+        (カルテの文字欄はクリックで手入力もできる)
+     4) 全部まとめて印刷(PDF保存)/ 作業内容を .karte ファイルに保存
    ===================================================================== */
 
-/* ---------- カルテの各欄と、最初に自動で選ぶExcelの見出し候補 ---------- */
+/* ---------- カルテの文字欄と、最初に使う Excel の列(カルテ様式の赤字) ---------- */
 const FIELDS = [
-  { key: 'name', label: '名称',                 cands: ['名称', '資料名', '列1'] },
-  { key: 'h1',   label: '寸法:縦',             cands: ['縦'] },
-  { key: 'w1',   label: '寸法:横',             cands: ['横'] },
-  { key: 'd3',   label: '寸法:右側の欄',        cands: [] },
-  { key: 'mat1', label: '本紙材質等:左',        cands: ['紙質'] },
-  { key: 'mat2', label: '本紙材質等:中',        cands: ['着色'] },
-  { key: 'mat3', label: '本紙材質等:右',        cands: ['主たる筆種'] },
-  { key: 'acc',  label: '付属ほか',             cands: ['付属ほか', '付属', '資料補強など'] },
-  { key: 'dmg',  label: '損傷:その他',          cands: [] },
-  { key: 'trt',  label: '処置内容:その他',      cands: [] },
+  { key: 'num',   label: '番号',             col: 'A'  },
+  { key: 'name',  label: '名称',             col: 'C'  },
+  { key: 'old',   label: '旧番号',           col: 'B'  },
+  { key: 'title', label: '原題',             col: 'O'  },
+  { key: 'era',   label: '紀年',             col: 'D'  },
+  { key: 'ad',    label: '西暦換算',         col: 'AD' },
+  { key: 'kan',   label: '朱角印「函號冊」', col: 'Q'  },
+  { key: 'dai',   label: '朱角印「第□號」', col: 'R'  },
+  { key: 'aa',    label: '史料中記載事項',   col: 'AA' },
+  { key: 'ab',    label: '紙背記載',         col: 'AB' },
+  { key: 'h',     label: '寸法:縦',         col: 'G'  },
+  { key: 'w',     label: '寸法:横',         col: 'H'  },
+  { key: 'mat',   label: '料紙:本紙材質',   col: 'K'  },
+  { key: 'cnt',   label: '料紙:紙数',       col: 'L'  },
+  { key: 'acc',   label: '付属ほか',         col: ''   },
+  { key: 'ae',    label: '資料補強など',     col: 'AE' },
+  { key: 'dmg',   label: '損傷:その他',     col: ''   },
+  { key: 'note1', label: '備考:左の細い欄', col: ''   },
+  { key: 'note2', label: '備考:右の広い欄', col: ''   },
 ];
-const STORE_KEY = 'karteApp.settings.v1';
+const STORE_KEY = 'karteApp.settings.v2';
 const IMAGE_EXT = /\.(jpe?g|png|gif|webp|bmp|avif)$/i;
-const PRINT_MAX_PX = 1600;   // 印刷用に縮小するときの長辺ピクセル数(約240dpi相当)
+const PRINT_MAX_PX = 1600;         // 印刷用に縮小するときの長辺ピクセル数(約240dpi相当)
+const MIN_FONT_PX = 6.5;           // 文字を小さくするときの下限(これより小さくせず、はみ出た分は切れる)
+const FILE_MAGIC = 'KARTEAPP1\n';  // 保存ファイル(.karte)の先頭に書く目印
 
 /* ---------- アプリ全体の状態(今読み込んでいるデータ) ---------- */
 const state = {
   workbook: null,        // SheetJS で読み込んだ Excel ブック
   excelName: '',
-  headers: [],           // [{ idx, letter, name }] 見出しの一覧
+  headers: [],           // [{ letter, name }] 列の一覧(A, B, C…)
+  c0: 0,                 // シートの左端の列番号(通常は0 = A列)
   headerRowNum: 0,       // 見出しがある Excel の行番号
   rows: new Map(),       // 番号 → { rowNum, values[] }
   dupKeys: [],           // Excel 内で重複している番号
   images: new Map(),     // 番号 → { front: 画像情報, back: 画像情報 }
+  overrides: new Map(),  // 番号 → { 欄のkey: 手入力した文字 }
   keys: [],              // 表示するカルテの番号一覧(並べ替え済み)
   current: 0,            // 今表示しているカルテの位置(0 から)
+  dirty: false,          // 保存していない変更があるか
 };
 
 /* ---------- 設定(ブラウザに保存される) ---------- */
 let settings = loadSettings();
 
+function defaultMap() {
+  const m = {};
+  for (const f of FIELDS) m[f.key] = f.col;
+  return m;
+}
 function loadSettings() {
-  const base = { numberCol: '番号', map: {}, notes: [], noteHeading: true, sheetName: '', keyRule: 'digits', showAll: false };
+  const base = { numberCol: 'A', map: defaultMap(), sheetName: '', keyRule: 'digits', showAll: false };
   try {
     const saved = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
-    return Object.assign(base, saved);
+    const s = Object.assign(base, saved);
+    s.map = Object.assign(defaultMap(), saved.map || {});
+    return s;
   } catch (e) { return base; }
 }
 function saveSettings() {
@@ -349,11 +404,20 @@ function normHeader(s) {
 function naturalCompare(a, b) {
   return String(a).localeCompare(String(b), 'ja', { numeric: true });
 }
-function baseName(path) {
-  return path.split('/').pop();
-}
 function stripExt(name) {
   return name.replace(/\.[^.]+$/, '');
+}
+// 列の記号(A, B, …, AE)を 0 から始まる番号に変える
+function colIndex(letter) {
+  let n = 0;
+  for (const ch of String(letter).toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n - 1;
+}
+// 0 から始まる番号を列の記号に変える
+function colLetter(idx) {
+  let s = '';
+  for (let n = idx + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
+  return s;
 }
 function setStatus(msg, warn) {
   const el = $('#status');
@@ -364,6 +428,16 @@ function showBusy(text) { $('#busyText').textContent = text; $('#busy').style.di
 function hideBusy() { $('#busy').style.display = 'none'; }
 // 画面の描画を1回待つ(進行状況の表示を更新させるため)
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+
+// 「保存していない変更がある」印を付ける/外す
+function setDirty(flag) {
+  state.dirty = flag;
+  const el = $('#saveState');
+  const hasData = state.rows.size || state.images.size || state.overrides.size;
+  if (!hasData) { el.textContent = 'まだ何も読み込んでいません。'; el.className = 'save-state'; return; }
+  el.textContent = flag ? '● 保存していない変更があります' : '✓ 保存済み';
+  el.className = 'save-state ' + (flag ? 'dirty' : 'clean');
+}
 
 /* =====================================================================
    1) Excel の読み込み
@@ -412,25 +486,21 @@ function sheetToRows(sheetName) {
 
 // 見出し行(「番号」と書かれたセルがある行)を上から40行の中で探す
 function findHeaderRow(rows) {
-  const target = normHeader(settings.numberCol || '番号');
   const limit = Math.min(rows.length, 40);
-  for (let i = 0; i < limit; i++) {
-    if ((rows[i] || []).some((c) => normHeader(c) === target)) return i;
-  }
-  // 見つからなければ「番号」で探し直す
   for (let i = 0; i < limit; i++) {
     if ((rows[i] || []).some((c) => normHeader(c) === '番号')) return i;
   }
   return -1;
 }
 
-// 選んだシートから、見出しと各行のデータを取り出して state に入れる
+// 選んだシートから、列の一覧と各行のデータを取り出して state に入れる
 function parseSheet() {
   const { rows, r0, c0 } = sheetToRows(settings.sheetName);
   state.headers = [];
   state.rows = new Map();
   state.dupKeys = [];
   state.headerRowNum = 0;
+  state.c0 = c0;
 
   const h = findHeaderRow(rows);
   if (h < 0) {
@@ -440,58 +510,51 @@ function parseSheet() {
   }
   state.headerRowNum = r0 + h + 1;
 
-  // 見出しの一覧を作る(同じ名前が2回出たら「名前(2)」にする)
-  const used = {};
-  const headerCells = rows[h];
-  const width = Math.max(...rows.slice(h, h + 50).map((r) => r.length), headerCells.length);
+  // 列の一覧(A列から、データのある一番右の列まで)
+  const width = Math.max(...rows.slice(h, h + 200).map((r) => r.length), 1);
   for (let j = 0; j < width; j++) {
-    const letter = XLSX.utils.encode_col(c0 + j);
-    let name = normHeader(headerCells[j]);
-    if (!name) continue;                       // 見出しが空の列は使わない
-    used[name] = (used[name] || 0) + 1;
-    if (used[name] > 1) name = `${name}(${used[name]})`;
-    state.headers.push({ idx: j, letter, name });
+    state.headers.push({ letter: colLetter(c0 + j), name: normHeader(rows[h][j]) });
   }
-
-  // 番号の列が見出しにないときは「番号」に戻す
-  if (!state.headers.some((x) => x.name === settings.numberCol)) settings.numberCol = '番号';
-  const numCol = state.headers.find((x) => x.name === settings.numberCol);
 
   // 見出しより下の行を、番号をキーにして覚える
-  if (numCol) {
-    for (let i = h + 1; i < rows.length; i++) {
-      const key = normKey(rows[i][numCol.idx]);
-      if (!key) continue;
-      if (state.rows.has(key)) { state.dupKeys.push(key); continue; }   // 重複は最初の行を使う
-      state.rows.set(key, { rowNum: r0 + i + 1, values: rows[i] });
-    }
+  const numIdx = colIndex(settings.numberCol) - c0;
+  for (let i = h + 1; i < rows.length; i++) {
+    const key = normKey(rows[i][numIdx]);
+    if (!key) continue;
+    if (state.rows.has(key)) { state.dupKeys.push(key); continue; }   // 重複は上の行を使う
+    state.rows.set(key, { rowNum: r0 + i + 1, values: rows[i] });
   }
 
-  applyDefaultMapping();
-  saveSettings();
+  updateExcelInfo();
+  refreshAfterData();
+  setDirty(true);
+}
 
+function updateExcelInfo() {
+  if (!state.excelName) { $('#excelInfo').textContent = 'まだ読み込んでいません。'; return; }
   let info = `${state.excelName}\nシート「${settings.sheetName}」 見出し:${state.headerRowNum}行目\n番号のある行:${state.rows.size}件`;
   if (state.dupKeys.length) info += `\n※番号の重複 ${state.dupKeys.length}件(上の行を使用):${state.dupKeys.slice(0, 10).join(', ')}${state.dupKeys.length > 10 ? ' …' : ''}`;
   $('#excelInfo').textContent = info;
-  refreshAfterData();
 }
 
-// まだ設定していない欄には、見出し候補の中から見つかったものを自動で選ぶ
-function applyDefaultMapping() {
-  const names = state.headers.map((x) => x.name);
-  for (const f of FIELDS) {
-    if (settings.map[f.key] === undefined) {
-      settings.map[f.key] = f.cands.find((c) => names.includes(c)) || '';
-    }
-  }
+// ある番号の行から、指定した列(A, B, …)の値を取り出す
+function cellValue(rowRec, letter) {
+  if (!rowRec || !letter) return '';
+  const j = colIndex(letter) - state.c0;
+  return String(rowRec.values[j] ?? '').trim();
 }
 
-// ある番号の行から、指定した見出しの値を取り出す
-function cellValue(rowRec, headerName) {
-  if (!rowRec || !headerName) return '';
-  const hd = state.headers.find((x) => x.name === headerName);
-  if (!hd) return '';
-  return String(rowRec.values[hd.idx] ?? '').trim();
+// カルテの1つの欄に入る「Excel の値」(手入力を除く)
+function excelFieldValue(key, fieldKey) {
+  const v = cellValue(state.rows.get(key), settings.map[fieldKey]);
+  if (fieldKey === 'num' && !v) return key;   // 番号が Excel にないときは画像の番号を表示
+  return v;
+}
+// カルテの1つの欄に実際に表示する値(手入力があればそちらを優先)
+function fieldValue(key, fieldKey) {
+  const ov = state.overrides.get(key);
+  if (ov && Object.prototype.hasOwnProperty.call(ov, fieldKey)) return ov[fieldKey];
+  return excelFieldValue(key, fieldKey);
 }
 
 /* =====================================================================
@@ -567,6 +630,7 @@ function addImages(list, side) {
   if (tiffCount) msg += `\n※TIFF画像 ${tiffCount}枚はブラウザで表示できないため読み込めません。JPEGかPNGに変換してください。`;
   setStatus(msg, extra > 0 || tiffCount > 0);
   refreshAfterData();
+  if (imgs.length) setDirty(true);
 }
 
 // 1つの枠(①または②)に画像を入れる
@@ -618,6 +682,7 @@ async function filesFromDrop(dt) {
 function rebuildKeys() {
   const currentKey = state.keys[state.current];
   const set = new Set(state.images.keys());
+  for (const k of state.overrides.keys()) set.add(k);
   if (settings.showAll || state.images.size === 0) {
     for (const k of state.rows.keys()) set.add(k);
   }
@@ -649,27 +714,30 @@ function renderImageInfo() {
   $('#imageInfo').textContent = t;
 }
 
+// 列の選択肢(「A列:番号」のような表示)を作る
+function columnOptions(selected, withNone) {
+  const list = state.headers.length ? state.headers : [];
+  const known = list.some((h) => h.letter === selected);
+  const opts = withNone ? ['<option value="">(表示しない・手入力のみ)</option>'] : [];
+  // Excel 未読込でも、設定されている列は表示しておく
+  if (selected && !known) opts.push(`<option value="${esc(selected)}" selected>${esc(selected)}列</option>`);
+  for (const h of list) {
+    opts.push(`<option value="${h.letter}" ${h.letter === selected ? 'selected' : ''}>${h.letter}列:${esc(h.name || '(見出しなし)')}</option>`);
+  }
+  return opts.join('');
+}
+
 // 「番号の列」の選択肢を作る
 function renderNumberColSelect() {
   const sel = $('#numberColSelect');
-  if (!state.headers.length) { sel.innerHTML = '<option>(Excel未読込)</option>'; sel.disabled = true; return; }
-  sel.disabled = false;
-  sel.innerHTML = state.headers.map((h) =>
-    `<option value="${esc(h.name)}" ${h.name === settings.numberCol ? 'selected' : ''}>${esc(h.letter)}列:${esc(h.name)}</option>`).join('');
+  sel.disabled = !state.headers.length;
+  sel.innerHTML = columnOptions(settings.numberCol, false);
 }
 
 // 「3. 項目の対応」の選択欄を作る
 function renderMappingUI() {
-  const opts = (selected) => ['<option value="">(表示しない)</option>']
-    .concat(state.headers.map((h) => `<option value="${esc(h.name)}" ${h.name === selected ? 'selected' : ''}>${esc(h.letter)}列:${esc(h.name)}</option>`))
-    .join('');
   $('#mapTable').innerHTML = FIELDS.map((f) =>
-    `<tr><td>${esc(f.label)}</td><td><select data-field="${f.key}" ${state.headers.length ? '' : 'disabled'}>${opts(settings.map[f.key])}</select></td></tr>`).join('');
-
-  const list = $('#noteList');
-  if (!state.headers.length) { list.innerHTML = '<span class="hint">Excel未読込</span>'; return; }
-  list.innerHTML = state.headers.map((h) =>
-    `<label><input type="checkbox" data-note="${esc(h.name)}" ${settings.notes.includes(h.name) ? 'checked' : ''}> ${esc(h.letter)}列:${esc(h.name)}</label>`).join('');
+    `<tr><td>${esc(f.label)}</td><td><select data-field="${f.key}">${columnOptions(settings.map[f.key], true)}</select></td></tr>`).join('');
 }
 
 // 番号へジャンプする一覧と、印刷範囲の一覧を作る
@@ -678,7 +746,8 @@ function renderJumpAndRange() {
     const im = state.images.get(k) || {};
     const mark = `${im.front ? '①' : '-'}${im.back ? '②' : '-'}`;
     const warn = state.rows.size && !state.rows.has(k) ? ' ※Excelなし' : '';
-    return `<option value="${i}">${esc(k)}  ${mark}${warn}</option>`;
+    const edited = state.overrides.has(k) ? ' ✎' : '';
+    return `<option value="${i}">${esc(k)}  ${mark}${edited}${warn}</option>`;
   }).join('');
   $('#jumpSelect').innerHTML = opts;
   $('#jumpSelect').value = String(state.current);
@@ -690,19 +759,19 @@ function renderJumpAndRange() {
 }
 
 // 1枚分のカルテ(A4)を作って返す
-//   key: 番号 / interactive: true なら写真枠をクリックで差し替えできるようにする / usePrintImages: 印刷用の縮小画像を使う
+//   key: 番号 / interactive: true なら手入力・写真の差し替えができる画面用 / usePrintImages: 印刷用の縮小画像を使う
 function renderSheet(key, interactive, usePrintImages) {
-  const row = state.rows.get(key);
   const img = state.images.get(key) || {};
-  const v = (fieldKey) => esc(cellValue(row, settings.map[fieldKey]));
+  const ov = state.overrides.get(key) || {};
 
-  // 備考欄の文章を作る
-  const noteLines = [];
-  for (const name of settings.notes) {
-    const val = cellValue(row, name);
-    if (!val) continue;
-    noteLines.push(settings.noteHeading ? `${name}:${val}` : val);
-  }
+  // 文字欄を1つ作る。cls: 見た目のクラス(c=中央ぞろえ など)
+  const fld = (fieldKey, cls = '') => {
+    const val = esc(fieldValue(key, fieldKey));
+    if (!interactive) return `<div class="v fit ${cls}">${val}</div>`;
+    const ph = settings.map[fieldKey] || '入力';
+    const edited = Object.prototype.hasOwnProperty.call(ov, fieldKey) ? 'edited' : '';
+    return `<div class="v fit ${cls} ${edited}" data-field="${fieldKey}" data-ph="${esc(ph)}" contenteditable="plaintext-only" spellcheck="false">${val}</div>`;
+  };
 
   const photo = (side, cls, mark) => {
     const im = img[side];
@@ -713,43 +782,59 @@ function renderSheet(key, interactive, usePrintImages) {
   };
 
   const el = document.createElement('div');
-  el.className = 'sheet';
+  el.className = 'sheet' + (interactive ? ' editable' : '');
   el.innerHTML = `
   <div class="form">
-    <div class="f-head">
-      <span class="lbl">番号</span><span class="num">${esc(key)}</span>
-      <span class="lbl">名称</span><span class="name fit v">${v('name')}</span>
-    </div>
-    <div class="f-sub"><span></span><span>縦</span><span>横</span><span></span></div>
     <div class="f-grid">
-      <div class="lbl">寸法</div>
-      <div class="dim"><span class="dv fit1">${v('h1')}</span><span class="x">×</span></div>
-      <div class="dim"><span class="dv fit1">${v('w1')}</span></div>
-      <div class="dim"><span class="x">×</span><span class="dv fit1">${v('d3')}</span></div>
+      <div class="lbl">番号</div>          <div class="s23">${fld('num', 'num')}</div>
+      <div class="lbl">名称</div>          <div class="last">${fld('name', 'name')}</div>
 
-      <div class="lbl">本紙材質等</div>
-      <div class="v fit">${v('mat1')}</div>
-      <div class="v fit">${v('mat2')}</div>
-      <div class="v fit">${v('mat3')}</div>
+      <div class="lbl">旧番号</div>        <div class="s23">${fld('old', 'c')}</div>
+      <div class="lbl">原題</div>          <div class="last">${fld('title')}</div>
 
-      <div class="lbl">付属ほか</div>
-      <div class="span3 v fit">${v('acc')}</div>
+      <div class="lbl">紀年</div>          <div class="s23">${fld('era', 'c')}</div>
+      <div class="lbl">西暦換算</div>      <div class="last">${fld('ad', 'c')}</div>
 
-      <div class="lbl">損傷</div>
-      <div class="span3">
-        <div class="checks"><span>折れ</span><span>皺</span><span>破れ</span><span>欠失</span></div>
-        <div class="other"><span>その他</span><span class="v fit">${v('dmg')}</span></div>
+      <div class="lbl">朱角印</div>
+      <div class="lbl c">「函號冊」</div>   <div>${fld('kan', 'c')}</div>
+      <div class="lbl c">「第□號」</div>   <div class="last">${fld('dai', 'c')}</div>
+
+      <div class="lbl">史料中記載事項</div><div class="s25 last">${fld('aa')}</div>
+      <div class="lbl">紙背記載</div>      <div class="s25 last">${fld('ab')}</div>
+
+      <div class="lbl">寸法(㎝)</div>
+      <div class="lbl c">縦</div>          <div>${fld('h', 'c')}</div>
+      <div class="lbl c">横</div>          <div class="last">${fld('w', 'c')}</div>
+
+      <div class="lbl">料紙</div>
+      <div class="lbl c">本紙材質</div>    <div>${fld('mat', 'c')}</div>
+      <div class="lbl c">紙数</div>        <div class="last">${fld('cnt', 'c')}</div>
+
+      <div class="lbl">付属ほか</div>      <div class="s25 last">${fld('acc')}</div>
+      <div class="lbl">資料補強など</div>  <div class="s25 last">${fld('ae')}</div>
+
+      <div class="mark-row last">
+        <div class="mlbl">損傷</div>
+        <div class="marks">
+          <div class="line"><span>折れ</span><span>皺</span><span>破れ</span><span>欠失</span></div>
+          <div class="other"><span>その他</span>${fld('dmg')}</div>
+        </div>
       </div>
-
-      <div class="lbl">処置内容</div>
-      <div class="span3">
-        <div class="checks"><span>プレス</span><span>補強</span><span>補紙</span><span></span></div>
-        <div class="other"><span>その他</span><span class="v fit">${v('trt')}</span></div>
+      <div class="mark-row last bottom">
+        <div class="mlbl">処置内容</div>
+        <div class="marks">
+          <div class="line"><span>プレス</span><span>補強</span><span>補紙</span><span></span></div>
+          <div class="line2"><span>旧補除去</span><span>テープ除去</span></div>
+        </div>
       </div>
-
-      <div class="lbl note-lbl">備考<small>特記事項<br>保存等</small></div>
-      <div class="span3"><div class="note fit">${esc(noteLines.join('\n'))}</div></div>
     </div>
+
+    <div class="f-note">
+      <div class="note-lbl">備考<small>特記事項<br>保存等</small></div>
+      <div>${fld('note1')}</div>
+      <div>${fld('note2')}</div>
+    </div>
+
     ${photo('front', 'p1', '①')}
     <div class="strip"></div>
     ${photo('back', 'p2', '②')}
@@ -757,19 +842,19 @@ function renderSheet(key, interactive, usePrintImages) {
   return el;
 }
 
-// 文字が枠に入りきらないとき、入るまで文字を小さくする
+// 文字が枠に入りきらないとき、入るまで文字を小さくする(下限まで小さくしても入らなければ、はみ出た分は切れる)
 function fitText(el) {
   el.style.fontSize = '';
   let size = parseFloat(getComputedStyle(el).fontSize);
   let guard = 0;
-  while ((el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1) && size > 6 && guard < 40) {
-    size -= 0.5;
+  while ((el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1) && size > MIN_FONT_PX && guard < 60) {
+    size = Math.max(MIN_FONT_PX, size - 0.5);
     el.style.fontSize = size + 'px';
     guard++;
   }
 }
 function fitAll(root) {
-  root.querySelectorAll('.fit, .fit1').forEach(fitText);
+  root.querySelectorAll('.fit').forEach(fitText);
 }
 
 // 今の番号のカルテを右側に表示する
@@ -781,9 +866,11 @@ function renderCurrent() {
   $('#nextBtn').disabled = state.current >= n - 1;
   $('#jumpSelect').value = String(state.current);
   $('#slotTools').style.visibility = n ? 'visible' : 'hidden';
+  $('#editHint').style.visibility = n ? 'visible' : 'hidden';
 
   if (!n) {
-    wrap.innerHTML = '<div class="empty-msg">左の「1. Excelを読み込む」「2. 画像を読み込む」から始めてください。<br>画像やフォルダをこの画面にドラッグ&ドロップしても読み込めます。</div>';
+    wrap.style.height = '';
+    wrap.innerHTML = '<div class="empty-msg">左の「1. Excelを読み込む」「2. 画像を読み込む」から始めてください。<br>前回の続きなら「保存したカルテを開く」を押してください。<br>画像やフォルダはこの画面にドラッグ&ドロップしても読み込めます。</div>';
     $('#badges').innerHTML = '';
     return;
   }
@@ -799,7 +886,9 @@ function renderCurrent() {
   else b.push('<span class="badge warn">Excelにこの番号がありません</span>');
   b.push(`<span class="badge ${img.front ? '' : 'warn'}">① ${esc(img.front ? img.front.path : '画像なし')}</span>`);
   b.push(`<span class="badge ${img.back ? '' : 'warn'}">② ${esc(img.back ? img.back.path : '画像なし')}</span>`);
+  if (state.overrides.has(key)) b.push(`<span class="badge">✎ 手入力 ${Object.keys(state.overrides.get(key)).length}欄</span>`);
   $('#badges').innerHTML = b.join('');
+  $('#revertBtn').disabled = !state.overrides.has(key);
 
   const scaler = document.createElement('div');
   scaler.className = 'preview-scale';
@@ -810,6 +899,7 @@ function renderCurrent() {
   fitAll(sheet);
   scalePreview();
   attachPhotoEvents(sheet, key);
+  attachEditEvents(sheet, key);
 }
 
 // プレビューを画面の幅に合わせて縮小する
@@ -821,6 +911,38 @@ function scalePreview() {
   const s = Math.min(1, wrap.clientWidth / sheet.offsetWidth);
   scaler.style.transform = `scale(${s})`;
   wrap.style.height = sheet.offsetHeight * s + 'px';
+}
+
+// 文字欄の手入力:入力中は文字の大きさを合わせ直し、入力が終わったら記録する
+function attachEditEvents(sheet, key) {
+  sheet.querySelectorAll('.v[data-field]').forEach((el) => {
+    el.addEventListener('input', () => fitText(el));
+    el.addEventListener('blur', () => commitEdit(el, key));
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { el.textContent = fieldValue(key, el.dataset.field); el.blur(); }
+    });
+  });
+}
+
+// 手入力した内容を記録する(Excel の値と同じに戻したら、手入力の記録は消す)
+function commitEdit(el, key) {
+  const field = el.dataset.field;
+  const text = el.innerText.replace(/\n+$/, '');
+  const before = fieldValue(key, field);
+  if (text === before) { fitText(el); return; }
+
+  const ov = state.overrides.get(key) || {};
+  if (text === excelFieldValue(key, field)) delete ov[field];
+  else ov[field] = text;
+  if (Object.keys(ov).length) state.overrides.set(key, ov);
+  else state.overrides.delete(key);
+
+  el.classList.toggle('edited', Object.prototype.hasOwnProperty.call(ov, field));
+  if (!text) el.textContent = '';   // 空にしたときは見本の文字(赤字)を出す
+  fitText(el);
+  setDirty(true);
+  renderJumpAndRange();
+  $('#revertBtn').disabled = !state.overrides.has(key);
 }
 
 // 写真枠のクリック・ドロップで画像を差し替えられるようにする
@@ -853,11 +975,13 @@ function replaceSlot(key, side, file) {
   state.images.set(key, rec);
   setStatus(`番号 ${key} の${side === 'front' ? '①' : '②'}を「${file.name}」に差し替えました。`);
   refreshAfterData();
+  setDirty(true);
 }
 
 function go(delta) {
   const n = state.keys.length;
   if (!n) return;
+  if (document.activeElement && document.activeElement.isContentEditable) document.activeElement.blur();
   state.current = Math.max(0, Math.min(n - 1, state.current + delta));
   renderCurrent();
 }
@@ -888,7 +1012,6 @@ async function makePrintImage(im) {
 async function preparePrint(keys) {
   const area = $('#printArea');
   area.innerHTML = '';
-  // 画像を1枚ずつ縮小
   const imgs = [];
   for (const k of keys) {
     const r = state.images.get(k);
@@ -909,20 +1032,197 @@ async function preparePrint(keys) {
 
 async function printKeys(keys) {
   if (!keys.length) { setStatus('印刷するカルテがありません。', true); return; }
+  if (document.activeElement && document.activeElement.isContentEditable) document.activeElement.blur();
   await preparePrint(keys);
   window.print();
 }
 window.addEventListener('afterprint', () => { $('#printArea').innerHTML = ''; });
 
 /* =====================================================================
+   5) 保存と読み込み(.karte ファイル)
+   ---------------------------------------------------------------------
+   ファイルの中身:
+     [目印 "KARTEAPP1\n"][説明部分の長さ 4バイト][説明部分(JSON)][画像1][画像2]…
+   説明部分には、Excel の内容・設定・手入力・画像の名前と位置が入る。
+   画像は元のファイルをそのまま並べて入れるので、画質は落ちない。
+   ===================================================================== */
+
+// 今の作業内容を1つのファイル(Blob)にまとめる
+function buildProjectBlob() {
+  const images = [];
+  const parts = [];
+  let offset = 0;
+  for (const [key, rec] of state.images) {
+    for (const side of ['front', 'back']) {
+      const im = rec[side];
+      if (!im) continue;
+      images.push({ key, side, name: im.name, path: im.path, type: im.file.type || '', offset, size: im.file.size });
+      parts.push(im.file);
+      offset += im.file.size;
+    }
+  }
+  const header = {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    settings,
+    excel: {
+      name: state.excelName, headerRowNum: state.headerRowNum, c0: state.c0,
+      headers: state.headers, dupKeys: state.dupKeys,
+      rows: [...state.rows].map(([k, r]) => [k, r.rowNum, r.values]),
+    },
+    overrides: [...state.overrides],
+    images,
+    currentKey: state.keys[state.current] || '',
+  };
+  const json = new TextEncoder().encode(JSON.stringify(header));
+  const len = new Uint8Array(4);
+  new DataView(len.buffer).setUint32(0, json.length, true);
+  return { blob: new Blob([FILE_MAGIC, len, json, ...parts], { type: 'application/octet-stream' }), header };
+}
+
+function suggestedFileName() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  const base = state.excelName ? stripExt(state.excelName) : 'カルテ';
+  return `${base}_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}.karte`;
+}
+
+// 「カルテを保存」:保存先を選べるブラウザ(Chrome/Edge)では保存先を聞き、それ以外はダウンロードフォルダに保存
+async function saveProject() {
+  if (document.activeElement && document.activeElement.isContentEditable) document.activeElement.blur();
+  if (!state.rows.size && !state.images.size && !state.overrides.size) { setStatus('保存する内容がありません。', true); return; }
+  const { blob, header } = buildProjectBlob();
+  try {
+    if (window.showSaveFilePicker) {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: suggestedFileName(),
+        types: [{ description: '写真カルテ', accept: { 'application/octet-stream': ['.karte'] } }],
+      });
+      showBusy('保存中…');
+      await nextFrame();
+      const w = await handle.createWritable();
+      await w.write(blob);
+      await w.close();
+      // 保存したファイルから画像を読み直す(同じファイルに上書きしても画像が消えないように)
+      await attachImagesFromProject(await handle.getFile(), header);
+      setStatus(`「${handle.name}」に保存しました。`);
+    } else {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = suggestedFileName();
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      setStatus(`「${a.download}」をダウンロードフォルダに保存しました。`);
+    }
+    setDirty(false);
+  } catch (e) {
+    if (e.name !== 'AbortError') { console.error(e); setStatus('保存できませんでした:' + e.message, true); }
+  } finally {
+    hideBusy();
+  }
+}
+
+// .karte ファイルの説明部分(JSON)を読む
+async function readProjectHeader(file) {
+  const head = new Uint8Array(await file.slice(0, FILE_MAGIC.length + 4).arrayBuffer());
+  const magic = new TextDecoder().decode(head.slice(0, FILE_MAGIC.length));
+  if (magic !== FILE_MAGIC) throw new Error('写真カルテの保存ファイルではありません');
+  const len = new DataView(head.buffer).getUint32(FILE_MAGIC.length, true);
+  const start = FILE_MAGIC.length + 4;
+  const header = JSON.parse(new TextDecoder().decode(await file.slice(start, start + len).arrayBuffer()));
+  return { header, dataStart: start + len };
+}
+
+// .karte ファイルの中の画像を、番号ごとの①②に入れ直す
+async function attachImagesFromProject(file, header) {
+  const dataStart = header ? (await readProjectHeader(file)).dataStart : 0;
+  const old = state.images;
+  state.images = new Map();
+  for (const it of header.images) {
+    const blob = file.slice(dataStart + it.offset, dataStart + it.offset + it.size, it.type);
+    const f = new File([blob], it.name, { type: it.type });
+    const rec = state.images.get(it.key) || { front: null, back: null };
+    const prev = old.get(it.key) && old.get(it.key)[it.side];
+    rec[it.side] = { name: it.name, path: it.path, file: f, url: URL.createObjectURL(f), printUrl: prev ? prev.printUrl : null };
+    if (prev) URL.revokeObjectURL(prev.url);
+    state.images.set(it.key, rec);
+  }
+  renderCurrent();
+}
+
+// 「保存したカルテを開く」
+async function openProject(file) {
+  if (state.dirty && !confirm('保存していない変更があります。破棄して、保存したカルテを開きますか?')) return;
+  try {
+    showBusy('保存したカルテを開いています…');
+    await nextFrame();
+    const { header } = await readProjectHeader(file);
+
+    // 今の内容を片付ける
+    for (const rec of state.images.values()) {
+      if (rec.front) releaseImage(rec.front);
+      if (rec.back) releaseImage(rec.back);
+    }
+    state.images = new Map();
+
+    // 設定・Excel の内容・手入力を戻す
+    settings = Object.assign(loadSettings(), header.settings || {});
+    settings.map = Object.assign(defaultMap(), (header.settings || {}).map || {});
+    saveSettings();
+    const ex = header.excel || {};
+    state.workbook = null;
+    state.excelName = ex.name || '';
+    state.headerRowNum = ex.headerRowNum || 0;
+    state.c0 = ex.c0 || 0;
+    state.headers = ex.headers || [];
+    state.dupKeys = ex.dupKeys || [];
+    state.rows = new Map((ex.rows || []).map(([k, rowNum, values]) => [k, { rowNum, values }]));
+    state.overrides = new Map(header.overrides || []);
+    $('#sheetRow').hidden = true;
+    $('#keyRule').value = settings.keyRule;
+    $('#showAll').checked = settings.showAll;
+
+    await attachImagesFromProject(file, header);
+    updateExcelInfo();
+    state.keys = [];
+    refreshAfterData();
+    const idx = state.keys.indexOf(header.currentKey);
+    if (idx >= 0) { state.current = idx; renderCurrent(); }
+    setDirty(false);
+    const when = header.savedAt ? new Date(header.savedAt).toLocaleString('ja-JP') : '';
+    setStatus(`「${file.name}」を開きました(${when} 保存、カルテ ${state.keys.length}件)。\nExcelを直した場合は「Excelファイルを選択」で読み込み直すと反映されます(手入力はそのまま残ります)。`);
+  } catch (e) {
+    console.error(e);
+    setStatus('開けませんでした:' + e.message, true);
+  } finally {
+    hideBusy();
+  }
+}
+
+/* =====================================================================
    ボタンなどの操作をつなぐ
    ===================================================================== */
 function bindEvents() {
+  // --- 保存・開く ---
+  $('#saveBtn').addEventListener('click', saveProject);
+  $('#openBtn').addEventListener('click', () => { $('#projectInput').value = ''; $('#projectInput').click(); });
+  $('#projectInput').addEventListener('change', (e) => { if (e.target.files[0]) openProject(e.target.files[0]); });
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveProject(); }
+  });
+  // 保存せずに閉じようとしたら確認する
+  window.addEventListener('beforeunload', (e) => {
+    if (state.dirty) { e.preventDefault(); e.returnValue = ''; }
+  });
+
   // --- Excel ---
   $('#excelBtn').addEventListener('click', () => { $('#excelInput').value = ''; $('#excelInput').click(); });
   $('#excelInput').addEventListener('change', (e) => { if (e.target.files[0]) loadExcel(e.target.files[0]); });
   $('#sheetSelect').addEventListener('change', (e) => { settings.sheetName = e.target.value; saveSettings(); parseSheet(); });
-  $('#numberColSelect').addEventListener('change', (e) => { settings.numberCol = e.target.value; saveSettings(); parseSheet(); });
+  $('#numberColSelect').addEventListener('change', (e) => {
+    settings.numberCol = e.target.value; saveSettings();
+    if (state.workbook) parseSheet();
+  });
 
   // --- 画像 ---
   const pick = (btn, input) => $(btn).addEventListener('click', () => { $(input).value = ''; $(input).click(); });
@@ -950,23 +1250,20 @@ function bindEvents() {
   $('#mapTable').addEventListener('change', (e) => {
     const f = e.target.dataset.field;
     if (!f) return;
-    settings.map[f] = e.target.value; saveSettings(); renderCurrent();
+    settings.map[f] = e.target.value; saveSettings(); setDirty(true); renderCurrent();
   });
-  $('#noteList').addEventListener('change', () => {
-    // 画面に並んでいる順(=Excelの列順)で備考に並べる
-    settings.notes = [...$('#noteList').querySelectorAll('input:checked')].map((x) => x.dataset.note);
-    saveSettings(); renderCurrent();
+  $('#resetMapBtn').addEventListener('click', () => {
+    settings.map = defaultMap(); saveSettings(); setDirty(true); renderMappingUI(); renderCurrent();
   });
-  $('#noteHeading').checked = settings.noteHeading;
-  $('#noteHeading').addEventListener('change', (e) => { settings.noteHeading = e.target.checked; saveSettings(); renderCurrent(); });
 
-  // --- 画像の入れ替え・削除 ---
+  // --- 画像の入れ替え・削除・手入力の取り消し ---
   $('#swapBtn').addEventListener('click', () => {
     const key = state.keys[state.current];
     const rec = state.images.get(key);
     if (!rec) return;
     [rec.front, rec.back] = [rec.back, rec.front];
     refreshAfterData();
+    setDirty(true);
   });
   const clear = (side) => {
     const key = state.keys[state.current];
@@ -976,16 +1273,25 @@ function bindEvents() {
     rec[side] = null;
     if (!rec.front && !rec.back) state.images.delete(key);
     refreshAfterData();
+    setDirty(true);
   };
   $('#clearFrontBtn').addEventListener('click', () => clear('front'));
   $('#clearBackBtn').addEventListener('click', () => clear('back'));
+  $('#revertBtn').addEventListener('click', () => {
+    const key = state.keys[state.current];
+    if (!state.overrides.has(key)) return;
+    if (!confirm(`番号 ${key} の手入力をすべて取り消して、Excelの値に戻しますか?`)) return;
+    state.overrides.delete(key);
+    refreshAfterData();
+    setDirty(true);
+  });
 
   // --- 移動 ---
   $('#prevBtn').addEventListener('click', () => go(-1));
   $('#nextBtn').addEventListener('click', () => go(1));
   $('#jumpSelect').addEventListener('change', (e) => { state.current = Number(e.target.value); renderCurrent(); });
   document.addEventListener('keydown', (e) => {
-    if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) || e.target.isContentEditable) return;
     if (e.key === 'ArrowLeft') go(-1);
     if (e.key === 'ArrowRight') go(1);
   });
@@ -1010,6 +1316,8 @@ function bindEvents() {
     dragDepth = 0;
     document.body.classList.remove('dropping');
     const list = await filesFromDrop(e.dataTransfer);
+    const project = list.find((x) => /\.karte$/i.test(x.file.name));
+    if (project) { await openProject(project.file); return; }
     const excel = list.find((x) => /\.(xlsx|xlsm|xls)$/i.test(x.file.name) && !x.file.name.startsWith('~$'));
     if (excel) await loadExcel(excel.file);
     if (list.some((x) => IMAGE_EXT.test(x.file.name) || /\.tiff?$/i.test(x.file.name))) addImages(list, null);
@@ -1020,6 +1328,7 @@ function bindEvents() {
 
 bindEvents();
 refreshAfterData();
+setDirty(false);
 </script>
 <!-- Excel を読み込むための部品(SheetJS)。build.py で1つのHTMLにまとめるときは中身が埋め込まれます -->
 <script>
