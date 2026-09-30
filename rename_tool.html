@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>一括リネームツール</title>
+<style>
+  :root {
+    --bg:#f5f6f8; --panel:#fff; --text:#1f2430; --sub:#6b7280; --line:#dfe3ea;
+    --accent:#2563eb; --accent-text:#fff; --ok:#15803d; --warn:#b45309; --err:#b91c1c; --chg:#eff6ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14161a; --panel:#1d2026; --text:#e5e7eb; --sub:#9ca3af; --line:#333842;
+            --accent:#3b82f6; --ok:#4ade80; --warn:#fbbf24; --err:#f87171; --chg:#1e2a44; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:14px/1.5 system-ui,"Hiragino Sans","Yu Gothic UI",sans-serif; }
+  header { padding:12px 16px; background:var(--panel); border-bottom:1px solid var(--line);
+           display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0 8px 0 0; }
+  main { display:grid; grid-template-columns:380px 1fr; gap:12px; padding:12px; align-items:start; }
+  @media (max-width:900px) { main { grid-template-columns:1fr; } }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px; }
+  #options { max-height:calc(100vh - 90px); overflow:auto; position:sticky; top:8px; }
+  @media (max-width:900px) { #options { position:static; max-height:none; } }
+  fieldset { border:1px solid var(--line); border-radius:6px; margin:0 0 10px; padding:8px 10px; }
+  legend { font-weight:600; padding:0 4px; }
+  label { display:inline-flex; align-items:center; gap:4px; margin:2px 8px 2px 0; }
+  .row { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; margin:4px 0; }
+  input[type=text], input[type=number], select {
+    background:var(--bg); color:var(--text); border:1px solid var(--line);
+    border-radius:4px; padding:3px 6px; font:inherit; }
+  input[type=number] { width:70px; }
+  input[type=text] { width:120px; }
+  input.wide { width:100%; }
+  button { background:var(--panel); color:var(--text); border:1px solid var(--line);
+           border-radius:6px; padding:5px 12px; font:inherit; cursor:pointer; }
+  button:hover:not(:disabled) { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:var(--accent-text); border-color:var(--accent); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .hint { color:var(--sub); font-size:12px; }
+  .toolbar { display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; margin-bottom:8px; }
+  .tablewrap { overflow:auto; max-height:calc(100vh - 190px); border:1px solid var(--line); border-radius:6px; }
+  table { border-collapse:collapse; width:100%; }
+  th, td { padding:4px 8px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; }
+  th { position:sticky; top:0; background:var(--panel); z-index:1; }
+  td.name { white-space:normal; word-break:break-all; }
+  tr.changed td.new { background:var(--chg); font-weight:600; }
+  tr.dragover { outline:2px dashed var(--accent); }
+  tr[draggable=true] { cursor:grab; }
+  .st-ok { color:var(--ok); } .st-none { color:var(--sub); } .st-err { color:var(--err); font-weight:600; }
+  img.thumb { width:44px; height:44px; object-fit:cover; border-radius:4px; display:block; }
+  #msg { margin:8px 0 0; min-height:1.4em; }
+  #msg.err { color:var(--err); } #msg.ok { color:var(--ok); }
+</style>
+</head>
+<body>
+<header>
+  <h1>一括リネームツール</h1>
+  <button id="btnPick" class="primary">📁 フォルダを選ぶ</button>
+  <span id="modeInfo" class="hint">フォルダを選ぶとファイル一覧が表示されます(Chrome / Edge なら実際にリネームできます)</span>
+  <input type="file" id="fallbackInput" webkitdirectory multiple hidden>
+</header>
+
+<main>
+  <!-- ========== 左:リネーム設定 ========== -->
+  <section id="options" class="panel">
+
+    <fieldset>
+      <legend>① 連番(表・裏 など)</legend>
+      <label><input type="checkbox" id="seqOn" checked> 連番を使う</label>
+      <div class="row">
+        配置:
+        <select id="seqPlace">
+          <option value="replace">元の名前を置き換える</option>
+          <option value="prefix">元の名前の前に付ける</option>
+          <option value="suffix">元の名前の後ろに付ける</option>
+        </select>
+      </div>
+      <div class="row">
+        開始 <input type="number" id="seqStart" value="1" min="0">
+        増分 <input type="number" id="seqStep" value="1" min="1">
+        桁数 <input type="number" id="seqDigits" value="3" min="1" max="10">
+      </div>
+      <div class="row">
+        連番の前 <input type="text" id="seqPre" placeholder="例: IMG_">
+        区切り <input type="text" id="seqSep" value="_" style="width:50px" title="配置が『前』『後ろ』のときの元の名前との区切り文字">
+      </div>
+      <div class="row">
+        <b>何枚で1組?</b> <input type="number" id="groupSize" value="2" min="1" max="20">
+        <span class="hint">2なら 001,001,002,002…</span>
+      </div>
+      <div class="hint">組の中の位置ごとの追加文字(空欄=なし):</div>
+      <div id="suffixList" class="row"></div>
+      <div class="hint">例) 1枚目「001」/ 2枚目「001_裏」/ 3枚目「002」/ 4枚目「002_裏」</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>② 検索・置換</legend>
+      <div class="row">検索 <input type="text" id="findStr"> → 置換 <input type="text" id="replStr"></div>
+      <label><input type="checkbox" id="findRegex"> 正規表現</label>
+      <label><input type="checkbox" id="findIcase"> 大文字小文字を無視</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>③ 文字の削除</legend>
+      <div class="row">
+        先頭から <input type="number" id="cutFirst" value="0" min="0"> 文字
+        末尾から <input type="number" id="cutLast" value="0" min="0"> 文字
+      </div>
+      <div class="row">正規表現で削除 <input type="text" id="cutRegex" placeholder="例: \(\d+\)|\s+"></div>
+      <label><input type="checkbox" id="cutSpace"> 空白をすべて削除</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>④ 文字の変換</legend>
+      <div class="row">
+        大文字/小文字:
+        <select id="caseMode">
+          <option value="none">変更しない</option>
+          <option value="lower">すべて小文字</option>
+          <option value="upper">すべて大文字</option>
+          <option value="cap">先頭だけ大文字</option>
+        </select>
+      </div>
+      <label><input type="checkbox" id="zen2han"> 全角英数字・記号 → 半角</label>
+      <label><input type="checkbox" id="spaceToUnderscore"> 空白 → アンダースコア</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>⑤ 接頭辞・接尾辞・日付</legend>
+      <div class="row">先頭に追加 <input type="text" id="prefix"> 末尾に追加 <input type="text" id="suffix"></div>
+      <div class="row">
+        <label><input type="checkbox" id="dateOn"> 更新日時を入れる</label>
+        <select id="datePlace"><option value="prefix">先頭</option><option value="suffix">末尾</option></select>
+        書式 <input type="text" id="dateFmt" value="YYYYMMDD" style="width:130px">
+      </div>
+      <div class="hint">YYYY MM DD HH mm ss が使えます</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>⑥ 拡張子</legend>
+      <div class="row">
+        <select id="extMode">
+          <option value="keep">そのまま</option>
+          <option value="lower">小文字にする (.JPG → .jpg)</option>
+          <option value="upper">大文字にする</option>
+          <option value="replace">別の拡張子に変更</option>
+          <option value="remove">拡張子を削除</option>
+        </select>
+        <input type="text" id="extNew" placeholder="jpg" style="width:70px">
+      </div>
+    </fieldset>
+
+    <button id="btnReset">設定をリセット</button>
+  </section>
+
+  <!-- ========== 右:ファイル一覧 ========== -->
+  <section class="panel">
+    <div class="toolbar">
+      並び順:
+      <select id="sortKey">
+        <option value="name">名前(自然順)</option>
+        <option value="mtime">更新日時</option>
+        <option value="size">サイズ</option>
+        <option value="ext">拡張子</option>
+        <option value="manual" disabled>手動(ドラッグ)</option>
+      </select>
+      <label><input type="checkbox" id="sortDesc"> 逆順</label>
+      絞り込み: <input type="text" id="filterExt" placeholder="拡張子 例: jpg,png" style="width:150px">
+      <input type="text" id="filterName" placeholder="名前に含む" style="width:120px">
+      <label><input type="checkbox" id="showThumb"> サムネイル</label>
+    </div>
+    <div class="toolbar">
+      <button id="btnAll">全選択</button>
+      <button id="btnNone">全解除</button>
+      <button id="btnInvert">選択反転</button>
+      <span id="count" class="hint"></span>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th></th><th>#</th><th class="thumbcol"></th><th>元の名前</th><th>新しい名前</th><th>状態</th></tr></thead>
+        <tbody id="tbody"><tr><td colspan="6" class="hint">フォルダを選んでください</td></tr></tbody>
+      </table>
+    </div>
+    <div class="hint">行をドラッグすると順番を入れ替えられます。チェックを外したファイルは連番の対象外です。</div>
+    <div class="toolbar" style="margin-top:8px">
+      <button id="btnApply" class="primary" disabled>✔ リネームを実行</button>
+      <button id="btnUndo" disabled>↩ 元に戻す</button>
+      <button id="btnCsv" disabled>CSV出力</button>
+      <button id="btnBat" disabled>.bat出力(Windows)</button>
+      <button id="btnSh" disabled>.sh出力(Mac/Linux)</button>
+    </div>
+    <div id="msg"></div>
+  </section>
+</main>
+
+<script>
+'use strict';
+/* =====================================================================
+ * 状態管理
+ *   items の 1 要素 = 1 ファイル
+ *   { id, file, name, checked, visible, newName, error }
+ * ===================================================================== */
+const $ = (id) => document.getElementById(id);   // id から要素を取る短縮関数
+const state = {
+  items: [],        // ファイル一覧
+  dir: null,        // フォルダのハンドル(実リネーム可能なときだけ入る)
+  undo: [],         // 直前のリネーム履歴 [{from, to}]
+  nextId: 1,
+};
+
+/* ---------- メッセージ表示 ---------- */
+// メッセージを画面下部に出す。kind は 'ok' / 'err' / ''
+function say(text, kind = '') { const m = $('msg'); m.textContent = text; m.className = kind; }
+
+/* =====================================================================
+ * フォルダ読み込み
+ * ===================================================================== */
+// 「フォルダを選ぶ」ボタン:対応ブラウザなら実リネーム用、非対応なら閲覧+出力用
+async function pickFolder() {
+  if (window.showDirectoryPicker) {
+    try {
+      const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
+      await loadDir(dir);
+    } catch (e) { if (e.name !== 'AbortError') say('フォルダを開けませんでした: ' + e.message, 'err'); }
+  } else {
+    $('fallbackInput').click();   // 非対応ブラウザ(Firefox/Safari)は従来のフォルダ選択へ
+  }
+}
+
+// ディレクトリハンドルの直下のファイルを読み込んで一覧にする(サブフォルダは対象外)
+async function loadDir(dir) {
+  state.dir = dir;
+  const items = [];
+  for await (const [name, h] of dir.entries()) {
+    if (h.kind !== 'file' || name.startsWith('.')) continue;   // フォルダと隠しファイルは除外
+    items.push(makeItem(await h.getFile()));
+  }
+  setItems(items);
+  $('modeInfo').textContent = `📂 ${dir.name}(実際にリネームできます)`;
+}
+
+// 非対応ブラウザ用:<input webkitdirectory> で選ばれたファイルを読み込む
+function loadFallback(fileList) {
+  state.dir = null;
+  const files = [...fileList].filter(f => {
+    const parts = (f.webkitRelativePath || f.name).split('/');
+    return parts.length <= 2 && !f.name.startsWith('.');      // 直下のファイルだけ
+  });
+  const root = files[0] && files[0].webkitRelativePath ? files[0].webkitRelativePath.split('/')[0] : '';
+  setItems(files.map(makeItem));
+  $('modeInfo').textContent = `📂 ${root}(このブラウザでは実行不可。CSV/.bat/.sh を出力して使ってください)`;
+}
+
+// File オブジェクトから一覧用のデータを作る
+function makeItem(file) {
+  return { id: state.nextId++, file, name: file.name, checked: true, visible: true, newName: file.name, error: '' };
+}
+
+// 一覧を差し替えて初期並び替え・表示更新
+function setItems(items) {
+  state.items = items;
+  state.undo = [];
+  $('sortKey').value = 'name';
+  sortItems();
+  refresh();
+  say(`${items.length} 個のファイルを読み込みました。`, 'ok');
+}
+
+/* =====================================================================
+ * 並び替え・絞り込み
+ * ===================================================================== */
+const collator = new Intl.Collator('ja', { numeric: true, sensitivity: 'base' }); // 001,002,010 を自然な順にする
+
+function splitExt(name) {          // "abc.tar.gz" → {stem:"abc.tar", ext:"gz"}(ドット無しは ext=""、先頭ドットは拡張子扱いしない)
+  const i = name.lastIndexOf('.');
+  return i > 0 ? { stem: name.slice(0, i), ext: name.slice(i + 1) } : { stem: name, ext: '' };
+}
+
+// sortKey の設定に従って items を並び替える(manual のときは何もしない)
+function sortItems() {
+  const key = $('sortKey').value, dir = $('sortDesc').checked ? -1 : 1;
+  if (key === 'manual') return;
+  const cmp = {
+    name:  (a, b) => collator.compare(a.name, b.name),
+    mtime: (a, b) => a.file.lastModified - b.file.lastModified,
+    size:  (a, b) => a.file.size - b.file.size,
+    ext:   (a, b) => collator.compare(splitExt(a.name).ext, splitExt(b.name).ext) || collator.compare(a.name, b.name),
+  }[key];
+  state.items.sort((a, b) => dir * cmp(a, b));
+}
+
+// 絞り込み条件(拡張子・名前)に合うか調べて visible を更新する
+function applyFilter() {
+  const exts = $('filterExt').value.split(/[,\s]+/).map(s => s.replace(/^\./, '').toLowerCase()).filter(Boolean);
+  const word = $('filterName').value.toLowerCase();
+  for (const it of state.items) {
+    const ext = splitExt(it.name).ext.toLowerCase();
+    it.visible = (!exts.length || exts.includes(ext)) && (!word || it.name.toLowerCase().includes(word));
+  }
+}
+
+/* =====================================================================
+ * 設定の読み取り
+ * ===================================================================== */
+// 「何枚で1組?」に合わせて、位置ごとの追加文字の入力欄を作り直す(入力済みの値は保持)
+function rebuildSuffixInputs() {
+  const n = Math.max(1, Math.min(20, +$('groupSize').value || 1));
+  const box = $('suffixList');
+  const old = [...box.querySelectorAll('input')].map(i => i.value);
+  box.textContent = '';
+  for (let k = 0; k < n; k++) {
+    const lab = document.createElement('label');
+    lab.append(`${k + 1}枚目 `);
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.style.width = '70px';
+    inp.value = old[k] !== undefined ? old[k] : (k === 1 ? '_裏' : '');   // 初期値:2枚目だけ「_裏」
+    inp.addEventListener('input', refresh);
+    lab.append(inp);
+    box.append(lab);
+  }
+}
+
+// 画面の入力値をまとめて 1 つのオブジェクトにして返す
+function readOptions() {
+  return {
+    seqOn: $('seqOn').checked, seqPlace: $('seqPlace').value,
+    seqStart: +$('seqStart').value || 0, seqStep: +$('seqStep').value || 1,
+    seqDigits: Math.max(1, +$('seqDigits').value || 1),
+    seqPre: $('seqPre').value, seqSep: $('seqSep').value,
+    groupSize: Math.max(1, +$('groupSize').value || 1),
+    suffixes: [...$('suffixList').querySelectorAll('input')].map(i => i.value),
+    findStr: $('findStr').value, replStr: $('replStr').value,
+    findRegex: $('findRegex').checked, findIcase: $('findIcase').checked,
+    cutFirst: +$('cutFirst').value || 0, cutLast: +$('cutLast').value || 0,
+    cutRegex: $('cutRegex').value, cutSpace: $('cutSpace').checked,
+    caseMode: $('caseMode').value, zen2han: $('zen2han').checked, spaceToUnderscore: $('spaceToUnderscore').checked,
+    prefix: $('prefix').value, suffix: $('suffix').value,
+    dateOn: $('dateOn').checked, datePlace: $('datePlace').value, dateFmt: $('dateFmt').value,
+    extMode: $('extMode').value, extNew: $('extNew').value.replace(/^\./, ''),
+  };
+}
+
+/* =====================================================================
+ * 新しい名前の計算(リネームの本体)
+ * ===================================================================== */
+// ミリ秒の時刻を "YYYYMMDD" のような書式の文字列にする
+function fmtDate(ms, fmt) {
+  const d = new Date(ms), p = (n) => String(n).padStart(2, '0');
+  return fmt.replace(/YYYY/g, d.getFullYear()).replace(/MM/g, p(d.getMonth() + 1)).replace(/DD/g, p(d.getDate()))
+            .replace(/HH/g, p(d.getHours())).replace(/mm/g, p(d.getMinutes())).replace(/ss/g, p(d.getSeconds()));
+}
+
+// 全角英数字・記号を半角に変換する(全角空白も半角に)
+function toHalfWidth(s) {
+  return s.replace(/[！-～]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
+}
+
+// 正規表現の特殊文字をエスケープする(通常の検索文字列を正規表現化するため)
+function escapeRegExp(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// 1 ファイル分の新しい名前を作る。
+//   name: 元のファイル名 / i: 対象ファイル内での番号(0始まり) / file: File / o: readOptions() の結果
+function buildName(name, i, file, o) {
+  let { stem, ext } = splitExt(name);
+
+  // --- 検索・置換 ---
+  if (o.findStr) {
+    const re = o.findRegex ? new RegExp(o.findStr, 'g' + (o.findIcase ? 'i' : ''))
+                           : new RegExp(escapeRegExp(o.findStr), 'g' + (o.findIcase ? 'i' : ''));
+    stem = stem.replace(re, o.replStr);
+  }
+  // --- 文字の削除 ---
+  if (o.cutFirst) stem = stem.slice(o.cutFirst);
+  if (o.cutLast) stem = o.cutLast >= stem.length ? '' : stem.slice(0, -o.cutLast);
+  if (o.cutRegex) stem = stem.replace(new RegExp(o.cutRegex, 'g'), '');
+  if (o.cutSpace) stem = stem.replace(/\s+/g, '');
+  // --- 文字の変換 ---
+  if (o.zen2han) stem = toHalfWidth(stem);
+  if (o.spaceToUnderscore) stem = stem.replace(/\s+/g, '_');
+  if (o.caseMode === 'lower') stem = stem.toLowerCase();
+  else if (o.caseMode === 'upper') stem = stem.toUpperCase();
+  else if (o.caseMode === 'cap') stem = stem.charAt(0).toUpperCase() + stem.slice(1).toLowerCase();
+
+  // --- 連番(groupSize 枚ごとに番号が進み、組内の位置ごとに追加文字を付ける) ---
+  if (o.seqOn) {
+    const num = o.seqStart + Math.floor(i / o.groupSize) * o.seqStep;
+    const pos = i % o.groupSize;
+    const seq = o.seqPre + String(num).padStart(o.seqDigits, '0') + (o.suffixes[pos] || '');
+    if (o.seqPlace === 'replace') stem = seq;
+    else if (o.seqPlace === 'prefix') stem = stem ? seq + o.seqSep + stem : seq;
+    else stem = stem ? stem + o.seqSep + seq : seq;
+  }
+  // --- 更新日時 ---
+  if (o.dateOn) {
+    const d = fmtDate(file.lastModified, o.dateFmt);
+    stem = o.datePlace === 'prefix' ? d + '_' + stem : stem + '_' + d;
+  }
+  // --- 接頭辞・接尾辞 ---
+  stem = o.prefix + stem + o.suffix;
+
+  // --- 拡張子 ---
+  if (o.extMode === 'lower') ext = ext.toLowerCase();
+  else if (o.extMode === 'upper') ext = ext.toUpperCase();
+  else if (o.extMode === 'replace') ext = o.extNew;
+  else if (o.extMode === 'remove') ext = '';
+
+  return ext ? `${stem}.${ext}` : stem;
+}
+
+// 名前として使えるかを調べる。問題があれば理由を、無ければ '' を返す
+function checkName(n) {
+  if (!n || n === '.' || n === '..') return '名前が空です';
+  if (/[\\/:*?"<>|\x00-\x1f]/.test(n)) return '使えない文字が含まれます';
+  if (/[. ]$/.test(n)) return '末尾が「.」または空白です';
+  if (n.length > 255) return '名前が長すぎます';
+  return '';
+}
+
+// 全ファイルの newName / error を再計算する(設定が変わるたびに呼ぶ)
+function computeNames() {
+  const o = readOptions();
+  applyFilter();
+  let idx = 0;
+  for (const it of state.items) {
+    it.error = '';
+    if (!it.checked || !it.visible) { it.newName = it.name; continue; }
+    try { it.newName = buildName(it.name, idx, it.file, o); }
+    catch (e) { it.newName = it.name; it.error = '設定エラー: ' + e.message; }
+    idx++;
+  }
+  // 重複チェック:リネーム後の名前どうし、および「リネームされない既存ファイル」との衝突(大文字小文字は区別しない)
+  const seen = new Map();
+  for (const it of state.items) {
+    const k = it.newName.toLowerCase();
+    seen.set(k, (seen.get(k) || 0) + 1);
+  }
+  for (const it of state.items) {
+    if (it.error) continue;
+    if (it.newName !== it.name) it.error = checkName(it.newName);
+    if (!it.error && seen.get(it.newName.toLowerCase()) > 1) it.error = '名前が重複しています';
+  }
+}
+
+/* =====================================================================
+ * 画面表示
+ * ===================================================================== */
+let thumbUrls = [];   // 作ったサムネイルの URL(あとで解放する)
+
+// 一覧表(テーブル)を描き直す
+function renderTable() {
+  thumbUrls.forEach(URL.revokeObjectURL); thumbUrls = [];
+  const tb = $('tbody'), showThumb = $('showThumb').checked;
+  document.querySelectorAll('.thumbcol').forEach(e => e.style.display = showThumb ? '' : 'none');
+  tb.textContent = '';
+  if (!state.items.length) { tb.innerHTML = '<tr><td colspan="6" class="hint">フォルダを選んでください</td></tr>'; return; }
+  let n = 0;
+  for (const it of state.items) {
+    if (!it.visible) continue;
+    n++;
+    const tr = document.createElement('tr');
+    const changed = it.checked && it.newName !== it.name;
+    if (changed) tr.className = 'changed';
+    tr.draggable = true; tr.dataset.id = it.id;
+
+    const tdChk = document.createElement('td');
+    const chk = document.createElement('input'); chk.type = 'checkbox'; chk.checked = it.checked;
+    chk.addEventListener('change', () => { it.checked = chk.checked; refresh(); });
+    tdChk.append(chk);
+
+    const tdNo = document.createElement('td'); tdNo.textContent = n;
+
+    const tdTh = document.createElement('td'); tdTh.className = 'thumbcol';
+    if (showThumb && /^image\//.test(it.file.type)) {
+      const img = document.createElement('img'); img.className = 'thumb'; img.loading = 'lazy';
+      const u = URL.createObjectURL(it.file); thumbUrls.push(u); img.src = u; tdTh.append(img);
+    }
+    if (!showThumb) tdTh.style.display = 'none';
+
+    const tdOld = document.createElement('td'); tdOld.className = 'name'; tdOld.textContent = it.name;
+    const tdNew = document.createElement('td'); tdNew.className = 'name new';
+    tdNew.textContent = it.checked ? it.newName : '(対象外)';
+    const tdSt = document.createElement('td');
+    if (it.error) { tdSt.textContent = it.error; tdSt.className = 'st-err'; }
+    else if (!it.checked) { tdSt.textContent = '-'; tdSt.className = 'st-none'; }
+    else if (changed) { tdSt.textContent = 'OK'; tdSt.className = 'st-ok'; }
+    else { tdSt.textContent = '変更なし'; tdSt.className = 'st-none'; }
+
+    tr.append(tdChk, tdNo, tdTh, tdOld, tdNew, tdSt);
+    tb.append(tr);
+  }
+}
+
+// 再計算 → 再描画 → ボタン状態の更新をまとめて行う(設定が変わるたびにこれを呼ぶ)
+function refresh() {
+  computeNames();
+  renderTable();
+  const changed = state.items.filter(it => it.checked && it.visible && it.newName !== it.name);
+  const errors = state.items.filter(it => it.error && it.checked && it.visible);
+  $('count').textContent = `全 ${state.items.length} 件 / 変更予定 ${changed.length} 件 / エラー ${errors.length} 件`;
+  const ok = changed.length > 0 && errors.length === 0;
+  $('btnApply').disabled = !(ok && state.dir);
+  $('btnCsv').disabled = $('btnBat').disabled = $('btnSh').disabled = !ok;
+  $('btnUndo').disabled = !(state.dir && state.undo.length);
+}
+
+/* =====================================================================
+ * 実際のリネーム(File System Access API)
+ * ===================================================================== */
+// ファイル 1 つを newName に改名する。move() 非対応のブラウザでは「コピーして元を削除」で代用する
+async function moveEntry(dir, oldName, newName) {
+  const h = await dir.getFileHandle(oldName);
+  if (typeof h.move === 'function') { await h.move(newName); return; }
+  const blob = await h.getFile();
+  const nh = await dir.getFileHandle(newName, { create: true });
+  const w = await nh.createWritable(); await w.write(blob); await w.close();
+  await dir.removeEntry(oldName);
+}
+
+// [{from, to}, ...] をまとめて改名する。
+// 「A→B と B→A」のような入れ替えでも壊れないよう、いったん一時名にしてから最終名にする(2 段階)
+async function renameAll(pairs) {
+  const tag = '__tmp_' + Date.now().toString(36) + '_';
+  for (let i = 0; i < pairs.length; i++) await moveEntry(state.dir, pairs[i].from, tag + i);
+  for (let i = 0; i < pairs.length; i++) await moveEntry(state.dir, tag + i, pairs[i].to);
+}
+
+// 「リネームを実行」ボタン
+async function applyRename() {
+  const pairs = state.items.filter(it => it.checked && it.visible && it.newName !== it.name)
+                           .map(it => ({ from: it.name, to: it.newName }));
+  // 既存ファイルとの衝突を最終確認(リネーム対象外のファイルと同名になる場合)
+  const fixed = new Set(state.items.filter(it => !pairs.some(p => p.from === it.name)).map(it => it.name.toLowerCase()));
+  const clash = pairs.find(p => fixed.has(p.to.toLowerCase()));
+  if (clash) { say(`「${clash.to}」は既に存在するため実行できません。`, 'err'); return; }
+  if (!confirm(`${pairs.length} 個のファイルをリネームします。よろしいですか?`)) return;
+  $('btnApply').disabled = true;
+  try {
+    await renameAll(pairs);
+    await loadDir(state.dir);                                     // 再読み込み(この中で undo が空になる)
+    state.undo = pairs.map(p => ({ from: p.to, to: p.from }));   // 元に戻す用(逆向きの対応表)
+    refresh();
+    say(`${pairs.length} 個のファイルをリネームしました。「元に戻す」で取り消せます。`, 'ok');
+  } catch (e) {
+    say('リネーム中にエラー: ' + e.message + '(途中まで実行された可能性があります。フォルダを開き直して確認してください)', 'err');
+  }
+}
+
+// 「元に戻す」ボタン:直前のリネームを逆向きに実行する
+async function undoRename() {
+  const pairs = state.undo;
+  try {
+    await renameAll(pairs);
+    await loadDir(state.dir);
+    state.undo = [];
+    refresh();
+    say('元に戻しました。', 'ok');
+  } catch (e) { say('元に戻せませんでした: ' + e.message, 'err'); }
+}
+
+/* =====================================================================
+ * 出力(CSV / .bat / .sh)
+ * ===================================================================== */
+// 変更予定の [{from, to}] を返す
+function plannedPairs() {
+  return state.items.filter(it => it.checked && it.visible && it.newName !== it.name)
+                    .map(it => ({ from: it.name, to: it.newName }));
+}
+
+// 文字列をファイルとしてダウンロードさせる
+function download(filename, text, mime) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: mime + ';charset=utf-8' }));
+  a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function exportCsv() {
+  const q = (s) => '"' + s.replace(/"/g, '""') + '"';
+  const rows = ['﻿変更前,変更後', ...plannedPairs().map(p => q(p.from) + ',' + q(p.to))];   // 先頭の ﻿ は Excel の文字化け防止
+  download('rename_list.csv', rows.join('\r\n'), 'text/csv');
+}
+
+function exportBat() {   // Windows 用:2 段階で ren する(入れ替えでも安全)
+  const ps = plannedPairs(), L = ['@echo off', 'chcp 65001 >nul', 'cd /d "%~dp0"'];
+  ps.forEach((p, i) => L.push(`ren "${p.from}" "__tmp_${i}"`));
+  ps.forEach((p, i) => L.push(`ren "__tmp_${i}" "${p.to}"`));
+  L.push('echo 完了', 'pause');
+  download('rename.bat', L.join('\r\n'), 'text/plain');
+}
+
+function exportSh() {    // Mac/Linux 用
+  const sq = (s) => "'" + s.replace(/'/g, "'\\''" ) + "'";
+  const ps = plannedPairs(), L = ['#!/bin/sh', 'cd "$(dirname "$0")" || exit 1'];
+  ps.forEach((p, i) => L.push(`mv -- ${sq(p.from)} ${sq('__tmp_' + i)}`));
+  ps.forEach((p, i) => L.push(`mv -- ${sq('__tmp_' + i)} ${sq(p.to)}`));
+  download('rename.sh', L.join('\n') + '\n', 'text/plain');
+}
+
+/* =====================================================================
+ * イベント登録
+ * ===================================================================== */
+$('btnPick').addEventListener('click', pickFolder);
+$('fallbackInput').addEventListener('change', (e) => loadFallback(e.target.files));
+$('btnApply').addEventListener('click', applyRename);
+$('btnUndo').addEventListener('click', undoRename);
+$('btnCsv').addEventListener('click', exportCsv);
+$('btnBat').addEventListener('click', exportBat);
+$('btnSh').addEventListener('click', exportSh);
+
+// 設定欄のどれかが変わったら再計算(位置ごとの追加文字欄は作成時に個別登録済み)
+document.querySelectorAll('#options input, #options select').forEach(el => {
+  el.addEventListener('input', refresh); el.addEventListener('change', refresh);
+});
+$('groupSize').addEventListener('input', () => { rebuildSuffixInputs(); refresh(); });
+
+// 並び順・絞り込み・サムネイル
+$('sortKey').addEventListener('change', () => { sortItems(); refresh(); });
+$('sortDesc').addEventListener('change', () => { sortItems(); refresh(); });
+['filterExt', 'filterName'].forEach(id => $(id).addEventListener('input', refresh));
+$('showThumb').addEventListener('change', refresh);
+
+// 選択ボタン(表示中の行だけが対象)
+const setChecked = (fn) => { state.items.forEach(it => { if (it.visible) it.checked = fn(it); }); refresh(); };
+$('btnAll').addEventListener('click', () => setChecked(() => true));
+$('btnNone').addEventListener('click', () => setChecked(() => false));
+$('btnInvert').addEventListener('click', () => setChecked(it => !it.checked));
+
+// 設定リセット:全項目を初期値に戻す
+$('btnReset').addEventListener('click', () => {
+  document.querySelectorAll('#options input, #options select').forEach(el => {
+    if (el.type === 'checkbox') el.checked = el.defaultChecked;
+    else if (el.tagName === 'SELECT') el.selectedIndex = Math.max(0, [...el.options].findIndex(o => o.defaultSelected));
+    else el.value = el.defaultValue;
+  });
+  $('suffixList').textContent = ''; rebuildSuffixInputs(); refresh();
+});
+
+// ドラッグで行の順番を入れ替える
+let dragId = null;
+const tbody = $('tbody');
+tbody.addEventListener('dragstart', (e) => { const tr = e.target.closest('tr'); if (tr) { dragId = +tr.dataset.id; e.dataTransfer.effectAllowed = 'move'; } });
+tbody.addEventListener('dragover', (e) => { const tr = e.target.closest('tr'); if (tr && dragId) { e.preventDefault(); tbody.querySelectorAll('.dragover').forEach(x => x.classList.remove('dragover')); tr.classList.add('dragover'); } });
+tbody.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const tr = e.target.closest('tr'); if (!tr || !dragId) return;
+  const from = state.items.findIndex(it => it.id === dragId);
+  const to = state.items.findIndex(it => it.id === +tr.dataset.id);
+  if (from >= 0 && to >= 0 && from !== to) {
+    const [moved] = state.items.splice(from, 1);
+    state.items.splice(to, 0, moved);
+    const opt = $('sortKey').querySelector('option[value=manual]'); opt.disabled = false; $('sortKey').value = 'manual';
+  }
+  dragId = null; refresh();
+});
+tbody.addEventListener('dragend', () => { dragId = null; tbody.querySelectorAll('.dragover').forEach(x => x.classList.remove('dragover')); });
+
+// 起動時の初期化
+rebuildSuffixInputs();
+refresh();
+</script>
+</body>
+</html>
