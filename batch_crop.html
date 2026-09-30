@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>一括クロップツール</title>
+<style>
+  :root { --bg:#f4f5f7; --panel:#fff; --text:#222; --sub:#666; --accent:#2563eb; --line:#d9dce1; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#16181d; --panel:#1f2229; --text:#e8e9ec; --sub:#9aa0aa; --accent:#5b8cff; --line:#343843; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:system-ui,"Hiragino Sans","Noto Sans JP",sans-serif; background:var(--bg); color:var(--text); }
+  header { padding:12px 16px; border-bottom:1px solid var(--line); background:var(--panel); }
+  header h1 { font-size:18px; margin:0; }
+  header p { margin:4px 0 0; font-size:12px; color:var(--sub); }
+  main { display:grid; grid-template-columns: 1fr 340px; gap:12px; padding:12px; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px; }
+  .panel h2 { font-size:14px; margin:0 0 8px; }
+  #stage { display:flex; justify-content:center; align-items:center; min-height:300px; background:repeating-conic-gradient(#8882 0 25%, transparent 0 50%) 0 0/16px 16px; border-radius:6px; overflow:hidden; }
+  canvas { max-width:100%; touch-action:none; cursor:crosshair; }
+  button, .btn { font:inherit; font-size:13px; padding:6px 10px; border:1px solid var(--line); border-radius:6px; background:var(--panel); color:var(--text); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0; align-items:center; }
+  label.field { font-size:12px; color:var(--sub); display:flex; flex-direction:column; gap:2px; }
+  input[type=number], select { font:inherit; font-size:13px; width:78px; padding:4px; background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:4px; }
+  select { width:auto; }
+  #list { max-height:360px; overflow:auto; border:1px solid var(--line); border-radius:6px; }
+  .item { display:flex; align-items:center; gap:8px; padding:4px 6px; border-bottom:1px solid var(--line); font-size:12px; cursor:pointer; }
+  .item:last-child { border-bottom:none; }
+  .item.active { background:color-mix(in srgb, var(--accent) 15%, transparent); }
+  .item img { width:36px; height:36px; object-fit:cover; border-radius:3px; flex:none; }
+  .item .name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .item .tag { color:var(--sub); font-size:11px; }
+  #status { font-size:12px; color:var(--sub); margin-top:8px; min-height:1.4em; }
+  progress { width:100%; }
+  .field-title { font-size:12px; color:var(--sub); margin:8px 0 4px; }
+  .seg { display:flex; gap:6px; margin-bottom:6px; }
+  .seg label { flex:1; cursor:pointer; }
+  .seg input { position:absolute; opacity:0; pointer-events:none; }
+  .seg span { display:block; text-align:center; padding:8px 6px; font-size:13px; border:2px solid var(--line); border-radius:6px; color:var(--sub); }
+  .seg input:checked + span { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700; box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+  .seg input:checked + span::before { content:"✓ "; }
+  .seg input:focus-visible + span { outline:2px solid var(--text); outline-offset:2px; }
+  #warn { display:none; margin:8px 0; padding:8px 10px; border-radius:6px; font-size:12px; line-height:1.5; background:#fff4d6; color:#5c4200; border:1px solid #e6b800; }
+  #warn.show { display:block; }
+  @media (prefers-color-scheme: dark) { #warn { background:#3a3000; color:#ffe58a; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>一括クロップツール</h1>
+  <p>1枚目の画像で範囲をドラッグして指定 → 同じ範囲をすべて(または選んだ画像だけ)切り抜きます。画像はブラウザ内だけで処理され、外部に送信されません。</p>
+</header>
+
+<main>
+  <section class="panel">
+    <h2 id="stageTitle">プレビュー(1枚目で範囲を指定)</h2>
+    <div id="stage"><canvas id="cv" width="640" height="400"></canvas></div>
+    <div id="warn"></div>
+    <div id="status">画像フォルダを読み込んでください。</div>
+  </section>
+
+  <aside class="panel">
+    <h2>1. 画像を読み込む</h2>
+    <div class="row">
+      <label class="btn">フォルダを選択<input id="dirInput" type="file" webkitdirectory multiple hidden></label>
+      <label class="btn">ファイルを選択<input id="fileInput" type="file" accept="image/*" multiple hidden></label>
+    </div>
+
+    <h2 style="margin-top:14px">2. 切り抜き範囲(1枚目基準・px)</h2>
+    <div class="row">
+      <label class="field">X<input id="ix" type="number" min="0" value="0"></label>
+      <label class="field">Y<input id="iy" type="number" min="0" value="0"></label>
+      <label class="field">幅<input id="iw" type="number" min="1" value="0"></label>
+      <label class="field">高さ<input id="ih" type="number" min="1" value="0"></label>
+    </div>
+    <div class="row">
+      <label class="field">サイズが違う画像の扱い
+        <select id="sizeMode">
+          <option value="abs">同じピクセル座標(はみ出しは切り詰め)</option>
+          <option value="rel">比率で換算(解像度が違う場合)</option>
+        </select>
+      </label>
+    </div>
+    <div class="field-title">出力形式</div>
+    <div class="seg" id="fmtGroup">
+      <label><input type="radio" name="fmt" value="image/png" checked><span>PNG</span></label>
+      <label><input type="radio" name="fmt" value="image/jpeg"><span>JPEG</span></label>
+    </div>
+
+    <h2 style="margin-top:14px">3. 対象を選ぶ</h2>
+    <div class="row">
+      <button id="selAll" disabled>全選択</button>
+      <button id="selNone" disabled>全解除</button>
+      <span id="count" class="tag" style="font-size:12px;color:var(--sub)"></span>
+    </div>
+    <div id="list"></div>
+
+    <h2 style="margin-top:14px">4. 出力</h2>
+    <div class="field-title">「フォルダに直接保存」で同名ファイルがある場合</div>
+    <div class="seg" id="dupGroup">
+      <label><input type="radio" name="dup" value="rename" checked><span>別名で保存(_2, _3…)</span></label>
+      <label><input type="radio" name="dup" value="overwrite"><span>上書き</span></label>
+    </div>
+    <div class="row">
+      <button id="zipBtn" class="primary" disabled>選択分をZIPで保存</button>
+      <button id="dirBtn" disabled title="Chrome / Edge のみ対応">フォルダに直接保存</button>
+    </div>
+    <progress id="prog" value="0" max="1" hidden></progress>
+  </aside>
+</main>
+
+<script>
+"use strict";
+
+// ---------- 状態 ----------
+// items: 読み込んだ画像の配列。各要素は { file, width, height, thumb, checked }
+//   file = 元ファイル / width,height = 画像サイズ / thumb = 小さなサムネ(dataURL) / checked = 出力対象か
+// ※メモリ節約のため、画像本体(デコード済みデータ)は保持しません。必要な時に1枚ずつ読み込んで、すぐ破棄します。
+const items = [];
+let rect = null;          // 切り抜き範囲 { x, y, w, h }(1枚目のピクセル座標)
+let previewIdx = 0;       // 今キャンバスに表示している画像の番号
+let drag = null;          // ドラッグ操作中の情報
+let previewBmp = null;    // 表示中の1枚だけデコード済みで保持する
+let drawToken = 0;        // 連続クリック時に古い描画結果を捨てるための番号
+
+// ---- 安全目安(ブラウザは環境により約2〜4GBで落ちやすい) ----
+const LIMIT_DECODED_MB = 150;       // 1枚のデコード後サイズ(幅×高×4byte)の警告ライン
+const LIMIT_TOTAL_INPUT_GB = 4;     // 読み込み合計サイズの警告ライン
+const LIMIT_ZIP_MB = 1000;          // ZIP出力の推定合計サイズの警告ライン(ZIPは全部メモリに載る)
+
+
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d");
+
+// ---------- 読み込み ----------
+
+// 選ばれたファイル群から画像だけを名前順に並べ、1枚ずつ「サイズ取得+サムネ作成」して items に入れる
+async function loadFiles(fileList) {
+  const files = [...fileList]
+    .filter(f => f.type.startsWith("image/"))
+    .sort((a, b) => (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name, undefined, { numeric: true }));
+  if (!files.length) { setStatus("画像ファイルが見つかりませんでした。"); return; }
+
+  previewBmp?.close?.(); previewBmp = null;
+  items.length = 0;
+  showWarn([]);
+  const warns = [];
+  let maxMB = 0, maxName = "";
+  const totalGB = files.reduce((s, f) => s + f.size, 0) / 1024 ** 3;
+
+  for (let i = 0; i < files.length; i++) {
+    setStatus(`読み込み中… ${i + 1} / ${files.length}`);
+    setProgress(i, files.length);
+    try {
+      // 1枚だけデコードしてサイズとサムネを取り、すぐ close() で解放する
+      const bmp = await createImageBitmap(files[i], { imageOrientation: "from-image" });
+      const mb = bmp.width * bmp.height * 4 / 1024 ** 2;         // デコード後のメモリ量の目安
+      if (mb > maxMB) { maxMB = mb; maxName = files[i].name; }
+      items.push({ file: files[i], width: bmp.width, height: bmp.height, thumb: makeThumb(bmp), checked: true });
+      bmp.close();
+    } catch (e) { console.warn("読み込み失敗:", files[i].name, e); }
+    if (i % 4 === 3) await new Promise(r => setTimeout(r));      // 画面を固まらせない
+  }
+  setProgress(1, 1);
+  if (!items.length) { setStatus("読み込める画像がありませんでした。"); return; }
+
+  if (maxMB > LIMIT_DECODED_MB) warns.push(`最大の画像(${maxName})は展開後 約${Math.round(maxMB)}MB を使います(目安 ${LIMIT_DECODED_MB}MB 超)。ブラウザのタブが重くなる/落ちる可能性があります。`);
+  if (totalGB > LIMIT_TOTAL_INPUT_GB) warns.push(`読み込み合計が ${totalGB.toFixed(1)}GB です(目安 ${LIMIT_TOTAL_INPUT_GB}GB 超)。数回に分けて処理してください。`);
+  const sizes = new Set(items.map(i => i.width + "x" + i.height));
+  if (sizes.size > 1) warns.push(`画像サイズが ${sizes.size} 種類あります。「サイズが違う画像の扱い」を確認してください。`);
+  showWarn(warns);
+
+  const b = items[0];
+  // 初期範囲は中央50%
+  setRect({ x: b.width * 0.25, y: b.height * 0.25, w: b.width * 0.5, h: b.height * 0.5 });
+  previewIdx = 0;
+  renderList(); updateButtons(); draw();
+  setStatus(`${items.length} 枚読み込みました(合計 ${totalGB.toFixed(2)}GB)。1枚目の上をドラッグして範囲を指定してください。`);
+}
+
+// デコード済み画像から小さなサムネ(dataURL)を作る
+function makeThumb(bmp) {
+  const s = 72 / Math.max(bmp.width, bmp.height);
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(bmp.width * s)); c.height = Math.max(1, Math.round(bmp.height * s));
+  c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.7);
+}
+
+// 警告メッセージ(配列)を画面に表示する。空なら非表示
+function showWarn(list) {
+  const w = $("warn");
+  w.innerHTML = list.length ? "⚠ " + list.map(t => t.replace(/</g, "&lt;")).join("<br>⚠ ") : "";
+  w.classList.toggle("show", list.length > 0);
+}
+
+// ---------- 範囲の計算 ----------
+
+// 範囲を整数に丸め、1枚目の画像内に収めて rect に保存し、数値欄も更新する
+function setRect(r) {
+  const b = items[0];
+  let x = Math.max(0, Math.round(r.x)), y = Math.max(0, Math.round(r.y));
+  let w = Math.round(r.w), h = Math.round(r.h);
+  w = Math.max(1, Math.min(w, b.width - x));
+  h = Math.max(1, Math.min(h, b.height - y));
+  rect = { x, y, w, h };
+  $("ix").value = x; $("iy").value = y; $("iw").value = w; $("ih").value = h;
+}
+
+// 画像 bmp に対して実際に切り抜く範囲を返す(サイズ違いの扱いをここで反映)
+function rectFor(bmp) {                // bmp には width/height を持つもの(items の要素など)を渡す
+  const ref = items[0];
+  let { x, y, w, h } = rect;
+  if ($("sizeMode").value === "rel") {
+    const sx = bmp.width / ref.width, sy = bmp.height / ref.height;
+    x *= sx; y *= sy; w *= sx; h *= sy;
+  }
+  x = Math.max(0, Math.round(x)); y = Math.max(0, Math.round(y));
+  w = Math.max(1, Math.min(Math.round(w), bmp.width - x));
+  h = Math.max(1, Math.min(Math.round(h), bmp.height - y));
+  return { x, y, w, h };
+}
+
+// ---------- 描画 ----------
+
+// キャンバスに表示中の画像と、切り抜き範囲(枠+外側の暗転)を描く
+async function draw() {
+  if (!items.length) { ctx.clearRect(0, 0, cv.width, cv.height); return; }
+  const token = ++drawToken;
+  const idx = previewIdx;
+  // 表示中の1枚だけをデコードして保持(前の1枚は破棄)
+  if (!previewBmp || previewBmp._idx !== idx) {
+    const nb = await createImageBitmap(items[idx].file, { imageOrientation: "from-image" });
+    if (token !== drawToken) { nb.close(); return; }             // 待っている間に別の操作があった
+    previewBmp?.close?.(); previewBmp = nb; nb._idx = idx;
+  }
+  const bmp = previewBmp;
+  // 画面に収まるよう縮小表示(内部解像度はそのまま、CSSで縮める)
+  const maxW = Math.min(900, $("stage").clientWidth || 900), maxH = 620;
+  const scale = Math.min(1, maxW / bmp.width, maxH / bmp.height);
+  cv.width = bmp.width; cv.height = bmp.height;
+  cv.style.width = bmp.width * scale + "px";
+  cv.style.height = bmp.height * scale + "px";
+  ctx.drawImage(bmp, 0, 0);
+
+  const r = rectFor(items[idx]);
+  ctx.fillStyle = "rgba(0,0,0,.5)";
+  ctx.fillRect(0, 0, cv.width, r.y);
+  ctx.fillRect(0, r.y + r.h, cv.width, cv.height - r.y - r.h);
+  ctx.fillRect(0, r.y, r.x, r.h);
+  ctx.fillRect(r.x + r.w, r.y, cv.width - r.x - r.w, r.h);
+  const lw = Math.max(2, 2 / scale);
+  ctx.strokeStyle = "#ffcc00"; ctx.lineWidth = lw;
+  ctx.strokeRect(r.x, r.y, r.w, r.h);
+  if (previewIdx === 0) {                       // 四隅のつまみ(編集できるのは1枚目のみ)
+    ctx.fillStyle = "#ffcc00";
+    const hs = 5 * lw;
+    for (const [cx, cy] of corners(r)) ctx.fillRect(cx - hs / 2, cy - hs / 2, hs, hs);
+  }
+  cv.style.cursor = previewIdx === 0 ? "crosshair" : "default";
+  $("stageTitle").textContent = previewIdx === 0
+    ? "プレビュー(1枚目:ドラッグで範囲を指定)"
+    : `プレビュー(${previewIdx + 1}枚目:${items[previewIdx].file.name} ※範囲の編集は1枚目で)`;
+}
+
+// 範囲の四隅の座標を返す
+function corners(r) {
+  return [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]];
+}
+
+// ---------- マウス/タッチ操作 ----------
+
+// ポインタ位置を画像のピクセル座標に変換する
+function toImgPos(e) {
+  const b = cv.getBoundingClientRect();
+  return { x: (e.clientX - b.left) * cv.width / b.width, y: (e.clientY - b.top) * cv.height / b.height };
+}
+
+cv.addEventListener("pointerdown", e => {
+  if (!items.length || previewIdx !== 0) return;
+  cv.setPointerCapture(e.pointerId);
+  const p = toImgPos(e);
+  const tol = 14 * cv.width / cv.getBoundingClientRect().width;  // つまみの当たり判定
+  // 四隅 → 対角を固定して伸縮
+  const cs = corners(rect2()), opp = [3, 2, 1, 0];
+  for (let i = 0; i < 4; i++) {
+    if (Math.abs(p.x - cs[i][0]) < tol && Math.abs(p.y - cs[i][1]) < tol) {
+      drag = { mode: "new", ax: cs[opp[i]][0], ay: cs[opp[i]][1] };
+      return;
+    }
+  }
+  // 範囲の内側 → 移動
+  if (p.x >= rect.x && p.x <= rect.x + rect.w && p.y >= rect.y && p.y <= rect.y + rect.h) {
+    drag = { mode: "move", dx: p.x - rect.x, dy: p.y - rect.y };
+  } else {                                       // 外側 → 新しい範囲を作る
+    drag = { mode: "new", ax: p.x, ay: p.y };
+  }
+});
+
+cv.addEventListener("pointermove", e => {
+  if (!drag) return;
+  const p = toImgPos(e), b = items[0];
+  if (drag.mode === "move") {
+    const x = Math.min(Math.max(0, p.x - drag.dx), b.width - rect.w);
+    const y = Math.min(Math.max(0, p.y - drag.dy), b.height - rect.h);
+    setRect({ x, y, w: rect.w, h: rect.h });
+  } else {
+    const px = Math.min(Math.max(0, p.x), b.width), py = Math.min(Math.max(0, p.y), b.height);
+    setRect({ x: Math.min(drag.ax, px), y: Math.min(drag.ay, py), w: Math.abs(px - drag.ax), h: Math.abs(py - drag.ay) });
+  }
+  draw();
+});
+
+cv.addEventListener("pointerup", () => { drag = null; });
+
+// 現在の rect のコピーを返す(コード内での見通しのため)
+function rect2() { return { ...rect }; }
+
+// 数値欄を直接編集したとき範囲に反映する
+["ix", "iy", "iw", "ih"].forEach(id => $(id).addEventListener("input", () => {
+  if (!items.length) return;
+  setRect({ x: +$("ix").value, y: +$("iy").value, w: +$("iw").value, h: +$("ih").value });
+  draw();
+}));
+$("sizeMode").addEventListener("change", () => items.length && draw());
+
+// ---------- 一覧 ----------
+
+// ファイル一覧(チェックボックス+サムネ)を作り直す
+function renderList() {
+  const list = $("list");
+  list.innerHTML = "";
+  items.forEach((it, i) => {
+    const row = document.createElement("div");
+    row.className = "item" + (i === previewIdx ? " active" : "");
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.checked = it.checked;
+    cb.addEventListener("click", e => e.stopPropagation());
+    cb.addEventListener("change", () => { it.checked = cb.checked; updateButtons(); });
+    const img = document.createElement("img"); img.src = it.thumb;
+    const name = document.createElement("span"); name.className = "name";
+    name.textContent = it.file.webkitRelativePath || it.file.name;
+    const tag = document.createElement("span"); tag.className = "tag";
+    tag.textContent = `${it.width}×${it.height}` + (i === 0 ? " 基準" : "");
+    row.append(cb, img, name, tag);
+    row.addEventListener("click", () => { previewIdx = i; renderList(); draw(); });
+    list.append(row);
+  });
+  updateButtons();
+}
+
+// 選択数の表示と、ボタンの有効/無効を更新する
+function updateButtons() {
+  const n = items.filter(i => i.checked).length;
+  $("count").textContent = items.length ? `${n} / ${items.length} 枚を選択中` : "";
+  $("selAll").disabled = $("selNone").disabled = !items.length;
+  $("zipBtn").disabled = $("dirBtn").disabled = n === 0;
+  $("dirBtn").hidden = !window.showDirectoryPicker;
+}
+
+$("selAll").onclick = () => { items.forEach(i => i.checked = true); renderList(); };
+$("selNone").onclick = () => { items.forEach(i => i.checked = false); renderList(); };
+
+// ---------- 切り抜き・出力 ----------
+
+// 1枚を切り抜いて Blob(画像データ)にする
+async function cropToBlob(it) {
+  const bmp = await createImageBitmap(it.file, { imageOrientation: "from-image" });  // この1枚だけ読み込む
+  const r = rectFor(bmp), type = getFormat();
+  const c = document.createElement("canvas");
+  c.width = r.w; c.height = r.h;
+  const g = c.getContext("2d");
+  if (type === "image/jpeg") { g.fillStyle = "#fff"; g.fillRect(0, 0, r.w, r.h); }  // 透明部分は白に
+  g.drawImage(bmp, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+  bmp.close();                                                  // すぐ解放(メモリ節約)
+  const blob = await new Promise(res => c.toBlob(res, type, 0.95));
+  c.width = c.height = 0;
+  return blob;
+}
+
+// 選ばれている出力形式("image/png" か "image/jpeg")を返す
+function getFormat() { return document.querySelector('input[name="fmt"]:checked').value; }
+
+// 「同名ファイルがあるとき」の選択("rename" か "overwrite")を返す
+function getDupMode() { return document.querySelector('input[name="dup"]:checked').value; }
+
+// フォルダ dir の中に name というファイルがあるか調べる
+async function existsIn(dir, name) {
+  try { await dir.getFileHandle(name); return true; }
+  catch (e) { if (e.name === "NotFoundError") return false; throw e; }
+}
+
+// 出力ファイル名(元の名前 + _crop + 拡張子)を作る
+function outName(it) {
+  const base = (it.file.webkitRelativePath || it.file.name).replace(/\.[^./\\]+$/, "");
+  return base + "_crop" + (getFormat() === "image/jpeg" ? ".jpg" : ".png");
+}
+
+// 進捗バーを更新する
+function setProgress(done, total) {
+  const p = $("prog"); p.hidden = done >= total; p.max = total; p.value = done;
+}
+
+// 選択された画像すべてを切り抜き、handler(名前, Blob) に順に渡す
+async function processSelected(handler) {
+  const sel = items.filter(i => i.checked);
+  const used = new Set();
+  let n = 0;
+  for (const it of sel) {
+    let name = outName(it);
+    for (let k = 2; used.has(name); k++) name = outName(it).replace(/(\.\w+)$/, `_${k}$1`);  // 重複回避
+    used.add(name);
+    await handler(name, await cropToBlob(it));
+    setProgress(++n, sel.length);
+    setStatus(`処理中… ${n} / ${sel.length}`);
+  }
+  return sel.length;
+}
+
+$("zipBtn").onclick = async () => {
+  // ZIPは出力を全部メモリに貯めるので、推定サイズが大きい時は確認する
+  const sel = items.filter(i => i.checked);
+  const estMB = sel.reduce((s, it) => { const r = rectFor(it); return s + r.w * r.h * 4 / 1024 ** 2; }, 0) * (getFormat() === "image/png" ? 0.6 : 0.15);
+  if (estMB > LIMIT_ZIP_MB && !confirm(`ZIPの推定サイズは約${Math.round(estMB)}MBで、メモリ不足で落ちる可能性があります。\n枚数を減らす、または「フォルダに直接保存」(Chrome/Edge)を推奨します。続行しますか?`)) return;
+  const entries = [];
+  const n = await processSelected(async (name, blob) => entries.push({ name, data: new Uint8Array(await blob.arrayBuffer()) }));
+  download(makeZip(entries), "cropped_images.zip");
+  setStatus(`${n} 枚を cropped_images.zip に保存しました。`);
+};
+
+$("dirBtn").onclick = async () => {
+  try {
+    const dir = await window.showDirectoryPicker({ mode: "readwrite" });
+    const n = await processSelected(async (name, blob) => {
+      name = name.replace(/[\\/]/g, "_");
+      if (getDupMode() === "rename") {                              // 別名モード: 空いている名前を探す
+        const stem = name.replace(/(\.\w+)$/, ""), ext = name.slice(stem.length);
+        for (let k = 2; await existsIn(dir, name); k++) name = `${stem}_${k}${ext}`;
+      }
+      const fh = await dir.getFileHandle(name, { create: true });   // overwrite なら既存を上書き
+      const w = await fh.createWritable(); await w.write(blob); await w.close();
+    });
+    setStatus(`${n} 枚をフォルダに保存しました。`);
+  } catch (e) { if (e.name !== "AbortError") setStatus("保存に失敗: " + e.message); }
+};
+
+// Blob をダウンロードさせる
+function download(blob, filename) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+// ---------- 簡易ZIP作成(無圧縮・外部ライブラリ不要) ----------
+
+// CRC32(ZIPのデータ検証値)の計算表
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+})();
+
+// バイト列の CRC32 を返す
+function crc32(buf) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+// entries([{name, data}])から ZIP ファイルの Blob を作る
+function makeZip(entries) {
+  const enc = new TextEncoder(), parts = [], central = [];
+  const d = new Date();
+  const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  let offset = 0;
+  for (const { name, data } of entries) {
+    const nb = enc.encode(name), crc = crc32(data);
+    const lh = new DataView(new ArrayBuffer(30));           // ローカルヘッダ
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true);
+    lh.setUint16(8, 0, true); lh.setUint16(10, time, true); lh.setUint16(12, date, true);
+    lh.setUint32(14, crc, true); lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true);
+    lh.setUint16(26, nb.length, true); lh.setUint16(28, 0, true);
+    parts.push(lh.buffer, nb, data);
+    const ch = new DataView(new ArrayBuffer(46));           // セントラルディレクトリ
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true);
+    ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true); ch.setUint16(12, time, true); ch.setUint16(14, date, true);
+    ch.setUint32(16, crc, true); ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true);
+    ch.setUint16(28, nb.length, true); ch.setUint32(42, offset, true);
+    central.push(ch.buffer, nb);
+    offset += 30 + nb.length + data.length;
+  }
+  const cdSize = central.reduce((s, p) => s + (p.byteLength ?? p.length), 0);
+  const end = new DataView(new ArrayBuffer(22));            // 終端レコード
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, end.buffer], { type: "application/zip" });
+}
+
+// ---------- 共通 ----------
+
+// ステータス欄にメッセージを表示する
+function setStatus(msg) { $("status").textContent = msg; }
+
+$("dirInput").addEventListener("change", e => loadFiles(e.target.files));
+$("fileInput").addEventListener("change", e => loadFiles(e.target.files));
+window.addEventListener("resize", () => items.length && draw());
+updateButtons();
+</script>
+</body>
+</html>
