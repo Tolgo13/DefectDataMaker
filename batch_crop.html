@@ -36,6 +36,14 @@
   .item .tag { color:var(--sub); font-size:11px; }
   #status { font-size:12px; color:var(--sub); margin-top:8px; min-height:1.4em; }
   progress { width:100%; }
+  .field-title { font-size:12px; color:var(--sub); margin:8px 0 4px; }
+  .seg { display:flex; gap:6px; margin-bottom:6px; }
+  .seg label { flex:1; cursor:pointer; }
+  .seg input { position:absolute; opacity:0; pointer-events:none; }
+  .seg span { display:block; text-align:center; padding:8px 6px; font-size:13px; border:2px solid var(--line); border-radius:6px; color:var(--sub); }
+  .seg input:checked + span { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700; box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+  .seg input:checked + span::before { content:"✓ "; }
+  .seg input:focus-visible + span { outline:2px solid var(--text); outline-offset:2px; }
   #warn { display:none; margin:8px 0; padding:8px 10px; border-radius:6px; font-size:12px; line-height:1.5; background:#fff4d6; color:#5c4200; border:1px solid #e6b800; }
   #warn.show { display:block; }
   @media (prefers-color-scheme: dark) { #warn { background:#3a3000; color:#ffe58a; } }
@@ -77,13 +85,10 @@
         </select>
       </label>
     </div>
-    <div class="row">
-      <label class="field">出力形式
-        <select id="fmt">
-          <option value="image/png">PNG</option>
-          <option value="image/jpeg">JPEG</option>
-        </select>
-      </label>
+    <div class="field-title">出力形式</div>
+    <div class="seg" id="fmtGroup">
+      <label><input type="radio" name="fmt" value="image/png" checked><span>PNG</span></label>
+      <label><input type="radio" name="fmt" value="image/jpeg"><span>JPEG</span></label>
     </div>
 
     <h2 style="margin-top:14px">3. 対象を選ぶ</h2>
@@ -95,6 +100,11 @@
     <div id="list"></div>
 
     <h2 style="margin-top:14px">4. 出力</h2>
+    <div class="field-title">「フォルダに直接保存」で同名ファイルがある場合</div>
+    <div class="seg" id="dupGroup">
+      <label><input type="radio" name="dup" value="rename" checked><span>別名で保存(_2, _3…)</span></label>
+      <label><input type="radio" name="dup" value="overwrite"><span>上書き</span></label>
+    </div>
     <div class="row">
       <button id="zipBtn" class="primary" disabled>選択分をZIPで保存</button>
       <button id="dirBtn" disabled title="Chrome / Edge のみ対応">フォルダに直接保存</button>
@@ -360,7 +370,7 @@ $("selNone").onclick = () => { items.forEach(i => i.checked = false); renderList
 // 1枚を切り抜いて Blob(画像データ)にする
 async function cropToBlob(it) {
   const bmp = await createImageBitmap(it.file, { imageOrientation: "from-image" });  // この1枚だけ読み込む
-  const r = rectFor(bmp), type = $("fmt").value;
+  const r = rectFor(bmp), type = getFormat();
   const c = document.createElement("canvas");
   c.width = r.w; c.height = r.h;
   const g = c.getContext("2d");
@@ -372,10 +382,22 @@ async function cropToBlob(it) {
   return blob;
 }
 
+// 選ばれている出力形式("image/png" か "image/jpeg")を返す
+function getFormat() { return document.querySelector('input[name="fmt"]:checked').value; }
+
+// 「同名ファイルがあるとき」の選択("rename" か "overwrite")を返す
+function getDupMode() { return document.querySelector('input[name="dup"]:checked').value; }
+
+// フォルダ dir の中に name というファイルがあるか調べる
+async function existsIn(dir, name) {
+  try { await dir.getFileHandle(name); return true; }
+  catch (e) { if (e.name === "NotFoundError") return false; throw e; }
+}
+
 // 出力ファイル名(元の名前 + _crop + 拡張子)を作る
 function outName(it) {
   const base = (it.file.webkitRelativePath || it.file.name).replace(/\.[^./\\]+$/, "");
-  return base + "_crop" + ($("fmt").value === "image/jpeg" ? ".jpg" : ".png");
+  return base + "_crop" + (getFormat() === "image/jpeg" ? ".jpg" : ".png");
 }
 
 // 進捗バーを更新する
@@ -402,7 +424,7 @@ async function processSelected(handler) {
 $("zipBtn").onclick = async () => {
   // ZIPは出力を全部メモリに貯めるので、推定サイズが大きい時は確認する
   const sel = items.filter(i => i.checked);
-  const estMB = sel.reduce((s, it) => { const r = rectFor(it); return s + r.w * r.h * 4 / 1024 ** 2; }, 0) * ($("fmt").value === "image/png" ? 0.6 : 0.15);
+  const estMB = sel.reduce((s, it) => { const r = rectFor(it); return s + r.w * r.h * 4 / 1024 ** 2; }, 0) * (getFormat() === "image/png" ? 0.6 : 0.15);
   if (estMB > LIMIT_ZIP_MB && !confirm(`ZIPの推定サイズは約${Math.round(estMB)}MBで、メモリ不足で落ちる可能性があります。\n枚数を減らす、または「フォルダに直接保存」(Chrome/Edge)を推奨します。続行しますか?`)) return;
   const entries = [];
   const n = await processSelected(async (name, blob) => entries.push({ name, data: new Uint8Array(await blob.arrayBuffer()) }));
@@ -414,7 +436,12 @@ $("dirBtn").onclick = async () => {
   try {
     const dir = await window.showDirectoryPicker({ mode: "readwrite" });
     const n = await processSelected(async (name, blob) => {
-      const fh = await dir.getFileHandle(name.replace(/[\\/]/g, "_"), { create: true });
+      name = name.replace(/[\\/]/g, "_");
+      if (getDupMode() === "rename") {                              // 別名モード: 空いている名前を探す
+        const stem = name.replace(/(\.\w+)$/, ""), ext = name.slice(stem.length);
+        for (let k = 2; await existsIn(dir, name); k++) name = `${stem}_${k}${ext}`;
+      }
+      const fh = await dir.getFileHandle(name, { create: true });   // overwrite なら既存を上書き
       const w = await fh.createWritable(); await w.write(blob); await w.close();
     });
     setStatus(`${n} 枚をフォルダに保存しました。`);
